@@ -1,0 +1,8 @@
+services:
+  bot:
+    build:
+      context: .
+    volumes:
+      - .:/app
+    command: ["python", "main.py"]
+    restart: unless-stopped
