@@ -29,7 +29,7 @@ async def embed_youtube_shorts(message: types.Message):
 async def embed_youtube_shorts(message: types.Message):
     link = message.text
     log.info('youtube link: %s', link)
-    yt = YouTube(link, on_progress_callback=on_progress)
+    yt = YouTube(link, on_progress_callback=on_progress, use_po_token=True)
     stream = yt.streams.filter(progressive=True, file_extension='mp4').get_highest_resolution()
     with tempfile.TemporaryDirectory() as tmp:
         await asyncio.to_thread(stream.download, output_path=tmp, filename=yt.video_id)
