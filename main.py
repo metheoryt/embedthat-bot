@@ -29,7 +29,7 @@ def po_token_verifier(**kwargs):
     return os.environ['PYTUBE_VISITOR_DATA'], os.environ['PYTUBE_PO_TOKEN']
 
 
-@router.message(F.text.startswith('https://youtube.com/shorts/'))
+@router.message(F.text.regexp(r'^https://(www\.)?youtube\.com/(watch|shorts/)'))
 async def embed_youtube_shorts(message: types.Message):
     link = message.text
     log.info('youtube link: %s', link)
