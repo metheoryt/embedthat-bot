@@ -11,3 +11,5 @@ wheels/
 
 # env
 .env
+# IntelliJ Idea
+.idea
