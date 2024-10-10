@@ -6,3 +6,7 @@ services:
       - .:/app
     command: ["python", "main.py"]
     restart: unless-stopped
+  redis:
+    image: redis/redis-stack:latest
+    ports:
+      - "6379:6379"

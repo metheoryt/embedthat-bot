@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import logging
 from pytubefix import YouTube
 from pytubefix.cli import on_progress
+import redis.asyncio as redis
 
 
 log = logging.getLogger(__name__)
@@ -30,15 +31,26 @@ async def embed_youtube_shorts(message: types.Message):
     link = message.text
     log.info('youtube link: %s', link)
     yt = YouTube(link, on_progress_callback=on_progress)
+    redis_client = redis.from_url(os.environ['REDIS_URL'], decode_responses=True)
+    if file_id := await redis_client.get(f'yt-tg-file:{yt.video_id}'):
+        await redis_client.aclose()
+        return await message.bot.send_video(
+            message.chat.id,
+            file_id,
+            reply_to_message_id=message.message_id
+        )
     stream = yt.streams.filter(progressive=True, file_extension='mp4').get_highest_resolution()
     with tempfile.TemporaryDirectory() as tmp:
         await asyncio.to_thread(stream.download, output_path=tmp, filename=yt.video_id)
         filename = os.path.join(tmp, yt.video_id)
-        await message.bot.send_video(
+        rs = await message.bot.send_video(
             message.chat.id,
             types.FSInputFile(filename),
             reply_to_message_id=message.message_id
         )
+    await redis_client.set(f'yt-tg-file:{yt.video_id}', rs.video.file_id)
+    await redis_client.aclose()
+
 
 @router.message(F.text.startswith('https://vm.tiktok.com/'))
 async def embed_tiktok(message: types.Message):
