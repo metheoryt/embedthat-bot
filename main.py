@@ -19,14 +19,10 @@ router = Router()
 
 
 @router.message(CommandStart())
-async def embed_youtube_shorts(message: types.Message):
+async def start(message: types.Message):
     await message.bot.send_message(
         message.chat.id, 'Send a link and i will reply with a nice embedding or a video'
     )
-
-
-def po_token_verifier(**kwargs):
-    return os.environ['PYTUBE_VISITOR_DATA'], os.environ['PYTUBE_PO_TOKEN']
 
 
 @router.message(F.text.regexp(r'^https://(www\.)?youtube\.com/(watch|shorts/)'))
@@ -52,7 +48,7 @@ async def embed_tiktok(message: types.Message):
 
 
 @router.message(F.text.startswith('https://www.instagram.com/'))
-async def embed_tiktok(message: types.Message):
+async def embed_instagram(message: types.Message):
     link = message.text
     log.info('instagram link: %s', link)
     await message.reply(link.replace('www.instagram', 'www.ddinstagram'))
