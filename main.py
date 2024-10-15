@@ -57,6 +57,20 @@ async def embed_instagram(message: types.Message):
     await message.reply(link.replace('www.instagram', 'www.ddinstagram'))
 
 
+@router.message(F.text.startswith('https://x.com/'))
+async def embed_x(message: types.Message):
+    link = message.text
+    log.info('x.com link: %s', link)
+    await message.reply(link.replace('https://x.com/', 'https://fixupx.com/'))
+
+
+@router.message(F.text.startswith('https://twitter.com/'))
+async def embed_twitter(message: types.Message):
+    link = message.text
+    log.info('twitter.com link: %s', link)
+    await message.reply(link.replace('https://twitter.com/', 'https://fxtwitter.com/'))
+
+
 async def main():
     token = os.environ['BOT_TOKEN']
     bot = Bot(token, default=DefaultBotProperties(parse_mode='HTML'))
