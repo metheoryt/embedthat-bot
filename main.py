@@ -84,4 +84,6 @@ if __name__ == '__main__':
         level=getattr(logging, os.getenv('LOGLEVEL', 'INFO')),
         format='%(asctime)s %(levelname)-8s %(name)s - %(message)s'
     )
+    # disable logs for non-handled events
+    logging.getLogger('aiogram.event').setLevel(logging.WARNING)
     asyncio.run(main())
