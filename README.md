@@ -1,4 +1,4 @@
-# "Embed that" bot
+# Embed that! bot
 
 A telegram bot, that can replace youtube/instagram/tiktok/twitter links with playable embeddings, 
 thanks to: 

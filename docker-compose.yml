@@ -2,6 +2,8 @@ services:
   bot:
     build:
       context: .
+    env_file:
+      - .env
     volumes:
       - .:/app
     command: ["python", "main.py"]
@@ -10,3 +12,9 @@ services:
     image: redis/redis-stack:latest
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    environment:
+      REDIS_ARGS: "--save 60 1"
+volumes:
+  redis_data:
