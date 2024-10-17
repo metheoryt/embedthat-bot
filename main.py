@@ -63,7 +63,6 @@ async def embed_youtube_shorts(message: types.Message):
                 await redis_client.aclose()
                 return
             filename = os.path.join(tmp, yt.video_id)
-            log.info('result file size is %s Mb', os.path.getsize(filename) >> 20)
             rs = await message.reply_video(types.FSInputFile(filename))
         await redis_client.set(f'yt-tg-file:{yt.video_id}', rs.video.file_id)
         log.info('cached %s', yt.video_id)
