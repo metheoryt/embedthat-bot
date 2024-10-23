@@ -27,7 +27,7 @@ async def start(message: types.Message):
     await message.reply('Send a link and i will reply with a nice embedding or a video')
 
 
-@router.message(F.text.regexp(r'^https://(www\.)?youtube\.com/(watch|shorts/)'))
+@router.message(F.text.regexp(r'^https://((www\.)?youtube\.com/(watch|shorts/)|youtu\.be/)'))
 async def embed_youtube_shorts(message: types.Message):
     log_link(message, 'youtube')
     link = message.text

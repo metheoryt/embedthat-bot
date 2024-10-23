@@ -16,5 +16,6 @@ services:
       - redis_data:/data
     environment:
       REDIS_ARGS: "--save 60 1"
+    restart: unless-stopped
 volumes:
   redis_data:
