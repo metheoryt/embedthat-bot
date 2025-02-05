@@ -81,7 +81,15 @@ async def embed_tiktok(message: types.Message):
 async def embed_instagram(message: types.Message):
     log_link(message, 'instagram')
     link = message.text
-    await message.reply(link.replace('www.instagram', 'www.ddinstagram'))
+    new_link = link.replace('www.instagram', 'www.ddinstagram')
+    try:
+        async with session.get(new_link) as rs:
+            rs.raise_for_status()
+    except Exception as e:
+        # if ddinstagram is not working, do not send anything
+        log.warning(e)
+    else:
+        await message.reply(new_link)
 
 
 @router.message(F.text.startswith('https://x.com/'))
@@ -96,6 +104,18 @@ async def embed_twitter(message: types.Message):
     log_link(message, 'twitter')
     link = message.text
     await message.reply(link.replace('https://twitter.com/', 'https://fxtwitter.com/'))
+
+
+session: aiohttp.ClientSession
+
+@dp.shutdown()
+async def on_shutdown(*args, **kwargs):
+    await session.close()
+
+@dp.startup()
+async def on_startup(*args, **kwargs):
+    global session
+    session = aiohttp.ClientSession()
 
 
 async def main():
