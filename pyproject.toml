@@ -1,0 +1,12 @@
+[project]
+name = "embedthat-bot"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.17.0",
+    "python-dotenv>=1.0.1",
+    "pytube>=15.0.0",
+    "pytubefix>=8.12.1",
+    "redis[hiredis]>=5.2.1",
+]

@@ -1,12 +1,11 @@
 services:
   bot:
-    build:
-      context: .
+    build: .
     env_file:
       - .env
     volumes:
       - .:/app
-    command: ["python", "main.py"]
+      - /app/.venv
     restart: unless-stopped
   redis:
     image: redis/redis-stack:latest

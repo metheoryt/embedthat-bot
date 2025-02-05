@@ -8,9 +8,8 @@ from aiogram.filters import CommandStart
 from dotenv import load_dotenv
 import logging
 from pytubefix import YouTube
-from pytubefix.cli import on_progress
 import redis.asyncio as redis
-
+import aiohttp
 
 log = logging.getLogger(__name__)
 
@@ -31,7 +30,8 @@ async def start(message: types.Message):
 async def embed_youtube_shorts(message: types.Message):
     log_link(message, 'youtube')
     link = message.text
-    yt = YouTube(link, on_progress_callback=on_progress)
+    # https://github.com/JuanBindez/pytubefix/pull/209
+    yt = YouTube(link, 'WEB')
     redis_client = redis.from_url(os.environ['REDIS_URL'], decode_responses=True)
 
     if file_id := await redis_client.get(f'yt-tg-file:{yt.video_id}'):

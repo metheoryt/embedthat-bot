@@ -1,5 +1,0 @@
-pytube>=15.0.0
-aiogram>=3.13.1
-python-dotenv>=1.0.1
-pytubefix>=7.2.2
-redis[hiredis]>=5.1.1
