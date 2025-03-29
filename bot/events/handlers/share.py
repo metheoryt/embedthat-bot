@@ -2,7 +2,7 @@ from aiogram import types
 
 from bot.config import settings
 from bot.enum import LinkOrigin
-from bot.events.signals import signal_handler, on_link_sent, on_yt_video_sent
+from bot.events.signals import signal_handler, on_link_sent, on_yt_video_sent, on_yt_video_fail
 
 
 @signal_handler(on_link_sent)
@@ -22,9 +22,13 @@ async def share_link(link: str, message: types.Message, origin: LinkOrigin):
 
 @signal_handler(on_yt_video_sent)
 async def share_yt_shorts(link: str, message: types.Message, file_id: str, fresh: bool):
-    """Share youtube shorts."""
-    if not settings.feed_channel_id or message.chat.type == "private":
-        return
+    """Share successfully downloaded YouTube videos to a debug feed channel."""
+    if settings.feed_channel_id and message.chat.type == "private" and fresh:
+        await message.bot.send_video(settings.feed_channel_id, file_id, caption=link)
 
-    if "/shorts/" in link and fresh is True:
-        await message.bot.send_video(settings.feed_channel_id, file_id)
+
+@signal_handler(on_yt_video_fail)
+async def share_yt_shorts(link: str, message: types.Message):
+    """Notify debug feed channel about failed YT video download."""
+    if settings.feed_channel_id:
+        await message.bot.send_message(settings.feed_channel_id, f"Failed do download: {link}")

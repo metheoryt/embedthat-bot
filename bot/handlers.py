@@ -10,7 +10,7 @@ from pytubefix import YouTube
 
 from .dispatcher import router
 from .enum import LinkOrigin
-from .events import on_yt_video_sent, on_link_sent, on_link_received
+from .events import on_yt_video_sent, on_yt_video_fail, on_link_sent, on_link_received
 from .util.aiohttp import session
 from .util.redis import redis_client
 
@@ -64,13 +64,14 @@ async def embed_youtube_shorts(message: types.Message):
                     stream.download, output_path=tmp, filename=yt.video_id
                 )
                 success = True
-            except Exception as e:
-                log.error(e)
+            except Exception:
+                log.exception("failed to download %s", yt.video_id)
                 await asyncio.sleep(2)
             else:
                 break
         if not success:
             log.error("failed to download youtube link %s", link)
+            await on_yt_video_fail.send(link, message)
             return
         filename = os.path.join(tmp, yt.video_id)
         rs = await message.reply_video(types.FSInputFile(filename))

@@ -17,5 +17,8 @@ def freeze_signals():
 on_yt_video_sent = Signal(
     "on_yt_video_sent(link: str, message: Message, file_id: str, fresh: bool)"
 )
+on_yt_video_fail = Signal(
+    "on_yt_video_fail(link: str, message: Message)"
+)
 on_link_sent = Signal("on_link_sent(link: str, message: Message, origin: LinkOrigin)")
 on_link_received = Signal("on_link_received(message: Message, origin: LinkOrigin)")
