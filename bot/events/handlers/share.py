@@ -23,7 +23,7 @@ async def share_link(link: str, message: types.Message, origin: LinkOrigin):
 @signal_handler(on_yt_video_sent)
 async def share_yt_shorts(link: str, message: types.Message, file_id: str, fresh: bool):
     """Share successfully downloaded YouTube videos to a debug feed channel."""
-    if settings.feed_channel_id and message.chat.type == "private" and fresh:
+    if settings.feed_channel_id and message.chat.type != "private" and fresh:
         await message.bot.send_video(settings.feed_channel_id, file_id, caption=link)
 
 
