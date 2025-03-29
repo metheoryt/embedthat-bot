@@ -10,7 +10,7 @@ def signal_handler(signal: Signal):
 
 
 def freeze_signals():
-    for sig in [on_link_received, on_link_sent, on_yt_video_sent]:
+    for sig in [on_link_received, on_link_sent, on_yt_video_sent, on_yt_video_fail]:
         sig.freeze()
 
 
