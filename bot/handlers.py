@@ -90,16 +90,26 @@ async def embed_tiktok(message: types.Message):
 
 @router.message(F.text.startswith("https://www.instagram.com/"))
 async def embed_instagram(message: types.Message):
+    if message.text.startswith("https://www.instagram.com/stories/"):
+        # stories require login
+        return
+
     await on_link_received.send(message, LinkOrigin.INSTAGRAM)
     link = message.text
-    new_link = link.replace("www.instagram", "www.ddinstagram")
-    try:
-        async with session.get(new_link) as rs:
-            rs.raise_for_status()
-    except Exception as e:
-        # if ddinstagram is not working, do not send anything
-        log.warning(e)
-    else:
+    success = False
+    for domain in ['kkinstagram', 'ddinstagram', 'instagramez', 'vxinstagram']:
+        new_link = link.replace(f"www.instagram", f"www.{domain}")
+        try:
+            async with session.get(new_link) as rs:
+                rs.raise_for_status()
+            success = True
+            log.info("chosen: %s", new_link)
+            break
+        except Exception as e:
+            # if the service is not working, do not send anything
+            log.warning(e)
+
+    if success:
         await message.reply(new_link)
         await on_link_sent.send(new_link, message, origin=LinkOrigin.INSTAGRAM)
 
