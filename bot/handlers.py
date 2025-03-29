@@ -27,7 +27,7 @@ async def start(message: types.Message):
 )
 async def embed_youtube_shorts(message: types.Message):
     await on_link_received.send(message, LinkOrigin.YOUTUBE)
-    link = message.text
+    link = message.text.split()[0]  # as regex states, we expect first element in text to be a link
     # https://github.com/JuanBindez/pytubefix/pull/209
     yt = YouTube(link, "WEB")
 
