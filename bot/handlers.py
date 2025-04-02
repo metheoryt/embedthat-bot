@@ -13,6 +13,7 @@ from .enum import LinkOrigin
 from .events import on_yt_video_sent, on_yt_video_fail, on_link_sent, on_link_received
 from .util.aiohttp import session
 from .util.redis import redis_client
+from redis.asyncio.lock import Lock
 
 log = logging.getLogger(__name__)
 
@@ -20,7 +21,6 @@ log = logging.getLogger(__name__)
 @router.message(CommandStart())
 async def start(message: types.Message):
     await message.reply("Send a link and i will reply with a nice embedding or a video")
-
 
 @router.message(
     F.text.regexp(r"^https://((www\.)?youtube\.com/(watch|shorts/)|youtu\.be/)")
@@ -31,53 +31,51 @@ async def embed_youtube_shorts(message: types.Message):
     # https://github.com/JuanBindez/pytubefix/pull/209
     yt = YouTube(link, "WEB")
 
-    if file_id := await redis_client.get(f"yt-tg-file:{yt.video_id}"):
-        log.info("cache hit for %s", yt.video_id)
-        try:
-            await message.reply_video(file_id)
-        except TelegramBadRequest:
-            log.info("telegram file was not found by cached id: %s", file_id)
-            await redis_client.delete(f"yt-tg-file:{yt.video_id}")
-        else:
-            await on_yt_video_sent.send(link, message, file_id=file_id, fresh=False)
-            return
-
-    log.info("cache miss for %s", yt.video_id)
-    with tempfile.TemporaryDirectory() as tmp:
-        success = False
-        for i in range(3):
+    async with Lock(redis_client, f'yt-lock:{yt.video_id}', timeout=2*60, blocking_timeout=2*60):
+        if file_id := await redis_client.get(f"yt-tg-file:{yt.video_id}"):
+            log.info("cache hit for %s", yt.video_id)
             try:
-                # Telegram bot cannot upload a file bigger than 50Mb.
-                # Get the highest available quality under 50Mb.
-                streams = [
-                    s
-                    for s in yt.streams.filter(progressive=True)
-                    .order_by("filesize")
-                    .desc()
-                    if s.filesize_mb < 50
-                ]
-                if not streams:
-                    log.info("no suitable stream is found for %s", yt.video_id)
-                    return
-                stream = streams[-1]
-                await asyncio.to_thread(
-                    stream.download, output_path=tmp, filename=yt.video_id
-                )
-                success = True
-            except Exception:
-                log.exception("failed to download %s", yt.video_id)
-                await asyncio.sleep(2)
+                await message.reply_video(file_id)
+            except TelegramBadRequest:
+                log.info("telegram file was not found by cached id: %s", file_id)
+                await redis_client.delete(f"yt-tg-file:{yt.video_id}")
             else:
-                break
-        if not success:
-            log.error("failed to download youtube link %s", link)
-            await on_yt_video_fail.send(link, message)
-            return
-        filename = os.path.join(tmp, yt.video_id)
-        rs = await message.reply_video(types.FSInputFile(filename))
-    await redis_client.set(f"yt-tg-file:{yt.video_id}", rs.video.file_id)
-    log.info("cached %s", yt.video_id)
-    await on_yt_video_sent.send(link, message, file_id=rs.video.file_id, fresh=True)
+                await on_yt_video_sent.send(link, message, file_id=file_id, fresh=False)
+                return
+
+        log.info("cache miss for %s", yt.video_id)
+        with tempfile.TemporaryDirectory() as tmp:
+            success = False
+            for i in range(3):
+                try:
+                    # Telegram bot cannot upload a file bigger than 50Mb.
+                    # Get the highest available quality under 50Mb.
+                    streams = [
+                        s for s in yt.streams.filter(progressive=True)
+                        .order_by("filesize")
+                        .desc()
+                        if s.filesize_mb < 50
+                    ]
+                    if not streams:
+                        log.info("no suitable stream is found for %s", yt.video_id)
+                        return
+                    stream = streams[-1]
+                    await asyncio.to_thread(stream.download, output_path=tmp, filename=yt.video_id)
+                    success = True
+                except Exception:
+                    log.exception("failed to download %s", yt.video_id)
+                    await asyncio.sleep(2)
+                else:
+                    break
+            if not success:
+                log.error("failed to download youtube link %s", link)
+                await on_yt_video_fail.send(link, message)
+                return
+            filename = os.path.join(tmp, yt.video_id)
+            rs = await message.reply_video(types.FSInputFile(filename))
+        await redis_client.set(f"yt-tg-file:{yt.video_id}", rs.video.file_id)
+        log.info("cached %s", yt.video_id)
+        await on_yt_video_sent.send(link, message, file_id=rs.video.file_id, fresh=True)
 
 
 @router.message(F.text.startswith("https://vm.tiktok.com/"))
