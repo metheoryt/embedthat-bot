@@ -1,8 +1,9 @@
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
+# install Git (required for uv git sources)
 # install NodeJS (required by pytubefix)
 RUN apt-get update \
-    && apt-get install -y curl \
+    && apt-get install -y git curl \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs && node -v && npm -v
 
