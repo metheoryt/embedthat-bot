@@ -21,7 +21,7 @@ async def main():
     await dp.start_polling(bot)
 
 
-if __name__ == "__main__":
+def setup():
     load_dotenv()
     logging.basicConfig(
         level=getattr(logging, settings.loglevel),
@@ -29,4 +29,10 @@ if __name__ == "__main__":
     )
     # disable logs for non-handled events
     logging.getLogger("aiogram.event").setLevel(logging.WARNING)
+    # logging.getLogger("pytube").setLevel(logging.DEBUG)
+    # logging.getLogger("pytubefix").setLevel(logging.DEBUG)
+
+
+if __name__ == "__main__":
+    setup()
     asyncio.run(main())

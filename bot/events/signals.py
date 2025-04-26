@@ -15,7 +15,7 @@ def freeze_signals():
 
 
 on_yt_video_sent = Signal(
-    "on_yt_video_sent(link: str, message: Message, file_id: str, fresh: bool)"
+    "on_yt_video_sent(link: str, message: Message, file_datas: list[dict], fresh: bool)"
 )
 on_yt_video_fail = Signal(
     "on_yt_video_fail(link: str, message: Message)"

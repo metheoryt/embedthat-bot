@@ -21,7 +21,14 @@ async def share_link(link: str, message: types.Message, origin: LinkOrigin):
 
 
 @signal_handler(on_yt_video_sent)
-async def share_yt_shorts(link: str, message: types.Message, file_id: str, fresh: bool):
+async def share_yt_shorts(link: str, message: types.Message, file_datas: list[dict], fresh: bool):
     """Share successfully downloaded YouTube videos to a debug feed channel."""
     if settings.feed_channel_id and message.chat.type != "private" and fresh:
-        await message.bot.send_video(settings.feed_channel_id, file_id, caption=link)
+        if len(file_datas) > 1:
+            media_group = [
+                types.InputMediaVideo(media=f['file_id'], width=f['width'], height=f['height']) for f in file_datas
+            ]
+            await message.bot.send_media_group(settings.feed_channel_id, media_group)
+        else:
+            f = file_datas[0]
+            await message.bot.send_video(settings.feed_channel_id, f['file_id'], width=f['width'], height=f['height'])

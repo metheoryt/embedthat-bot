@@ -2,11 +2,13 @@ import asyncio
 import logging
 import os
 import tempfile
+from pathlib import Path
 
-from aiogram import types, F
+from aiogram import types, F, enums
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.types import ErrorEvent
+from pytube import Stream
 from pytubefix import YouTube
 
 from .dispatcher import router
@@ -14,8 +16,10 @@ from .enum import LinkOrigin
 from .events import on_yt_video_sent, on_yt_video_fail, on_link_sent, on_link_received
 from .util.aiohttp import session
 from .util.redis import redis_client
+from .util.youtube import check_download_adaptive, get_resolution
 from redis.asyncio.lock import Lock
 from bot.config import settings
+import json
 
 log = logging.getLogger(__name__)
 
@@ -42,57 +46,97 @@ async def start(message: types.Message):
 @router.message(
     F.text.regexp(r"^https://((www\.)?youtube\.com/(watch|shorts/)|youtu\.be/)")
 )
-async def embed_youtube_shorts(message: types.Message):
+async def embed_youtube_videos(message: types.Message):
     await on_link_received.send(message, LinkOrigin.YOUTUBE)
     link = message.text.split()[0]  # as regex states, we expect first element in text to be a link
     # https://github.com/JuanBindez/pytubefix/pull/209
     yt = YouTube(link, "WEB")
 
-    async with Lock(redis_client, f'yt-lock:{yt.video_id}', timeout=2*60, blocking_timeout=2*60):
-        if file_id := await redis_client.get(f"yt-tg-file:{yt.video_id}"):
-            log.info("cache hit for %s", yt.video_id)
+    yt_videos_key = f"yt-videos:{yt.video_id}"
+    async with Lock(redis_client, f'yt-lock:{yt.video_id}', timeout=10*60, blocking_timeout=11*60):
+        if file_ids := await redis_client.lrange(yt_videos_key, 0, -1):
+            log.info("cache hit for %s (%d files)", yt.video_id, len(file_ids))
+            file_datas = [json.loads(file_id) for file_id in file_ids]
             try:
-                await message.reply_video(file_id)
+                if len(file_datas) > 1:
+                    media_group = [
+                        types.InputMediaVideo(
+                            media=f['file_id'],
+                            width=f['width'],
+                            height=f['height'],
+                            caption=f"{i+1}/{len(file_datas)}",
+                        ) for i, f in enumerate(file_datas)
+                    ]
+                    await message.reply_media_group(media_group)
+                else:
+                    f = file_datas[0]
+                    await message.reply_video(f['file_id'], width=f['width'], height=f['height'])
+
             except TelegramBadRequest:
-                log.info("telegram file was not found by cached id: %s", file_id)
-                await redis_client.delete(f"yt-tg-file:{yt.video_id}")
+                log.info("cached telegram file ids failed to be posted, removing from cache")
+                await redis_client.delete(yt_videos_key)
             else:
-                await on_yt_video_sent.send(link, message, file_id=file_id, fresh=False)
+                await on_yt_video_sent.send(link, message, file_datas=file_datas, fresh=False)
                 return
 
         log.info("cache miss for %s", yt.video_id)
+        await message.bot.send_chat_action(message.chat.id, enums.ChatAction.UPLOAD_VIDEO)
+
         with tempfile.TemporaryDirectory() as tmp:
             success = False
             for i in range(3):
                 try:
-                    # Telegram bot cannot upload a file bigger than 50Mb.
-                    # Get the highest available quality under 50Mb.
-                    streams = [
-                        s for s in yt.streams.filter(progressive=True)
-                        .order_by("filesize")
-                        .desc()
-                        if s.filesize_mb < 50
-                    ]
-                    if not streams:
-                        log.info("no suitable stream is found for %s", yt.video_id)
+                    stream, file_paths = await asyncio.to_thread(check_download_adaptive, yt=yt, output_path=tmp)
+                    stream: Stream
+                    if not stream:
+                        log.info('cannot download youtube link %s', link)
                         return
-                    stream = streams[-1]
-                    await asyncio.to_thread(stream.download, output_path=tmp, filename=yt.video_id)
-                    success = True
                 except Exception:
-                    log.exception("failed to download %s", yt.video_id)
+                    log.exception("failed to download %s on try #%d", yt.video_id, i+1)
                     await asyncio.sleep(2)
                 else:
+                    success = True
                     break
+
             if not success:
-                log.error("failed to download youtube link %s", link)
+                log.error("finally failed to download youtube link %s", link)
                 await on_yt_video_fail.send(link, message)
                 return
-            filename = os.path.join(tmp, yt.video_id)
-            rs = await message.reply_video(types.FSInputFile(filename))
-        await redis_client.set(f"yt-tg-file:{yt.video_id}", rs.video.file_id)
-        log.info("cached %s", yt.video_id)
-        await on_yt_video_sent.send(link, message, file_id=rs.video.file_id, fresh=True)
+
+            await message.bot.send_chat_action(message.chat.id, enums.ChatAction.UPLOAD_VIDEO)
+            width, height = get_resolution(stream)
+
+            if len(file_paths) > 1:
+                log.info('too many parts, sending one by one to obtain file ids')
+                # If there are more than 1 part, send them one-by-one first, and reuse file ids
+                file_ids = []
+                for file_path in file_paths:
+                    # Send the file and get its file_id
+                    media_message = await message.bot.send_video(settings.dump_chat_id, types.FSInputFile(file_path), width=width, height=height)
+                    log.info("sent %s", file_path)
+                    file_ids.append(media_message.video.file_id)
+
+                media_group = [
+                    types.InputMediaVideo(
+                        media=file_id,
+                        width=width,
+                        height=height,
+                        caption=f"{i+1}/{len(file_ids)}"
+                    )
+                    for i, file_id in enumerate(file_ids)
+                ]
+                await message.reply_media_group(media_group)
+
+            else:
+                log.info('sending single video directly')
+                rs = await message.reply_video(types.FSInputFile(file_paths[0]), width=width, height=height)
+                file_ids = [rs.video.file_id]
+
+        file_datas = [{"file_id": file_id, "width": width, "height": height} for file_id in file_ids]
+        file_datas_raw = [json.dumps(file_data) for file_data in file_datas]
+        await redis_client.rpush(yt_videos_key, *file_datas_raw)
+        log.info("cached %s (%d files)", yt.video_id, len(file_datas))
+        await on_yt_video_sent.send(link, message, file_datas=file_datas, fresh=True)
 
 
 @router.message(F.text.startswith("https://vm.tiktok.com/"))

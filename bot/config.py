@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     )
     loglevel: str = "INFO"
 
+    dump_chat_id: int  # where parts of YouTube videos will be posted to be sent as a media group later
     feed_channel_id: int | None = None
     admin_chat_id: int | None = None
 
