@@ -36,8 +36,8 @@ Message text:
 
 @router.message(CommandStart())
 async def start(message: types.Message):
-    raise RuntimeError('fuck you')
     await message.reply("Send a link and i will reply with a nice embedding or a video")
+
 
 @router.message(
     F.text.regexp(r"^https://((www\.)?youtube\.com/(watch|shorts/)|youtu\.be/)")
