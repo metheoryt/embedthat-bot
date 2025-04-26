@@ -6,6 +6,7 @@ import tempfile
 from aiogram import types, F
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
+from aiogram.types import ErrorEvent
 from pytubefix import YouTube
 
 from .dispatcher import router
@@ -14,12 +15,28 @@ from .events import on_yt_video_sent, on_yt_video_fail, on_link_sent, on_link_re
 from .util.aiohttp import session
 from .util.redis import redis_client
 from redis.asyncio.lock import Lock
+from bot.config import settings
 
 log = logging.getLogger(__name__)
 
 
+@router.error()
+async def error_handler(event: ErrorEvent):
+    log.critical("Critical error caused by %s", event.exception, exc_info=True)
+    if settings.admin_chat_id:
+        message = event.update.message
+        msg = f"""
+Exception:
+`{event.exception!r}`
+Message text:
+`{message.text}`
+""".strip()
+        await message.bot.send_message(settings.admin_chat_id, msg, parse_mode="MarkdownV2")
+
+
 @router.message(CommandStart())
 async def start(message: types.Message):
+    raise RuntimeError('fuck you')
     await message.reply("Send a link and i will reply with a nice embedding or a video")
 
 @router.message(

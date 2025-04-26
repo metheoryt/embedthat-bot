@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     loglevel: str = "INFO"
 
     feed_channel_id: int | None = None
+    admin_chat_id: int | None = None
 
 
 # noinspection PyArgumentList

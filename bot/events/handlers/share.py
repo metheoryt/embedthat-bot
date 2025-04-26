@@ -25,10 +25,3 @@ async def share_yt_shorts(link: str, message: types.Message, file_id: str, fresh
     """Share successfully downloaded YouTube videos to a debug feed channel."""
     if settings.feed_channel_id and message.chat.type != "private" and fresh:
         await message.bot.send_video(settings.feed_channel_id, file_id, caption=link)
-
-
-@signal_handler(on_yt_video_fail)
-async def share_yt_shorts(link: str, message: types.Message):
-    """Notify debug feed channel about failed YT video download."""
-    if settings.feed_channel_id:
-        await message.bot.send_message(settings.feed_channel_id, f"Failed do download: {link}")
