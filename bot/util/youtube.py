@@ -24,7 +24,13 @@ def pick_stream(streams: list[Stream], audio_stream: Stream) -> tuple[Stream, in
     for n_parts in range(1, 11):  # 10 max (what an album can fit)
         for stream in streams:
             total_size = audio_size + stream.filesize
-            if total_size <= MAX_FILE_SIZE_BYTES * 0.9 * n_parts:  # leave 10% for turbulence
+
+            if n_parts == 1:
+                max_size = MAX_FILE_SIZE_BYTES * 0.95
+            else:
+                max_size = MAX_FILE_SIZE_BYTES * 0.75  # leave 25% space for split overhead
+
+            if total_size <= max_size * n_parts:
                 log.info('selected stream (split for %d parts, %dMb size): %s', n_parts, total_size // 1024 // 1024, stream)
                 return stream, n_parts
 
@@ -104,6 +110,7 @@ def check_download_adaptive(yt: YouTube, output_path: str, min_res: int = 360) -
         str(merged_stream_path)
     ]
     subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    log.info("%s merged size: %dMb", merged_stream_path, merged_stream_path.stat().st_size // 1024 // 1024)
 
     if n_parts == 1:
         video_files = [merged_stream_path]
