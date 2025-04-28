@@ -44,7 +44,7 @@ async def start(message: types.Message):
 
 
 @router.message(
-    F.text.regexp(r"^https://((www\.)?youtube\.com/(watch|shorts/)|youtu\.be/)")
+    F.text.regexp(r"^https://(((www|m)\.)?youtube\.com/(watch|shorts/)|youtu\.be/)")
 )
 async def embed_youtube_videos(message: types.Message):
     await on_link_received.send(message, LinkOrigin.YOUTUBE)
