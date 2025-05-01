@@ -40,7 +40,7 @@ class YouTubeVideoData(BaseModel):
 
     @property
     def caption(self):
-        return f'{self.yt.title} [{self.translated_lang} audio]\n\n{self.link}\nby @{settings.bot_username}'
+        return f'{self.yt.title} [{self.translated_lang or self.source_lang or self.target_lang} audio]\n\n{self.link}\nby @{settings.bot_username}'
 
     @property
     def media_group(self):
