@@ -3,10 +3,12 @@ FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 # Git for uv git sources
 # ffmpeg for YT streams merge
 # NodeJS for pytubefix
+# vot-cli for YT video translations https://github.com/FOSWLY/vot-cli
 RUN apt-get update \
     && apt-get install -y git ffmpeg curl \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs && node -v && npm -v
+    && apt-get install -y nodejs && node -v && npm -v \
+    && npm install -g vot-cli
 
 WORKDIR /app
 
@@ -35,4 +37,4 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Reset the entrypoint, don't invoke `uv`
 ENTRYPOINT []
 
-CMD ["uv", "run", "main.py"]
+CMD ["python", "main.py"]

@@ -13,12 +13,16 @@ from bot.events import freeze_signals
 async def main():
     from bot import handlers  # noqa
 
-    bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
+    the_bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
     dp.include_router(router)
+    me = await the_bot.get_me()
+
+    # populate some data
+    settings.bot_username = me.username
 
     # freeze signals before starting the polling (non-frozen signals unable to send signals)
     freeze_signals()
-    await dp.start_polling(bot)
+    await dp.start_polling(the_bot)
 
 
 def setup():

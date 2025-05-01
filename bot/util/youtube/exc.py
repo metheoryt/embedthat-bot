@@ -1,0 +1,2 @@
+class YouTubeError(Exception):
+    pass

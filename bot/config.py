@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     feed_channel_id: int | None = None
     admin_chat_id: int | None = None
 
+    # populated on setup
+    bot_username: str | None = None
+
 
 # noinspection PyArgumentList
 settings = Settings()
