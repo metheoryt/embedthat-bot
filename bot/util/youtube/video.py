@@ -62,16 +62,18 @@ def pick_stream(video: YouTubeVideoData, output_path: Path, min_res: int) -> tup
     ]
 
     # clear streams from those who lie about their resolution
-    clean_video_streams = []
+    real_res_to_stream = {}
     for stream in video_streams:
         width, height = get_resolution(stream)
-        p_side = int(stream.resolution.replace('p', ''))
-        if p_side != height and p_side != width:  # check both album and portrait AR
-            log.warning('%s real resolution is %dx%d', stream, width, height)
-        else:
-            clean_video_streams.append(stream)
+        key = (width, height)
+        if key in real_res_to_stream:
+            log.info('duplicate res %dx%d stream: %s', width, height, stream)
+        real_res_to_stream[key] = stream
 
-    video_streams = clean_video_streams
+    # sort by total pixels desc
+    video_streams = [
+        s[1] for s in sorted(real_res_to_stream.items(), key=lambda s: s[0][0] * s[0][1], reverse=True)
+    ]
     log.info('supported adaptive video streams: %s', video_streams)
 
     for n_parts in range(1, 11):  # 10 max (what an album can fit)
