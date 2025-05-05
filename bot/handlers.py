@@ -4,7 +4,7 @@ import tempfile
 
 from aiogram import types, F
 from aiogram.enums import ChatAction
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
 from aiogram.filters import CommandStart
 from aiogram.types import ErrorEvent, Message
 from redis.asyncio.lock import Lock
@@ -75,12 +75,22 @@ async def handle_youtube_video(message: Message, video: YouTubeVideoData) -> You
         file_ids = []
         for file_path in file_paths:
             # Send the file and get its file_id
-            media_message = await message.bot.send_video(
-                settings.dump_chat_id,
-                types.FSInputFile(file_path),
-                width=width,
-                height=height
-            )
+            for i in range(3):
+                try:
+                    media_message = await message.bot.send_video(
+                        settings.dump_chat_id,
+                        types.FSInputFile(file_path),
+                        width=width,
+                        height=height
+                    )
+                    break
+                except TelegramNetworkError:
+                    if i == 2:
+                        raise
+                    log.warning('failed to send a video file, retrying in 2 seconds')
+                    await asyncio.sleep(2)
+                    continue
+
             log.info("sent %s", file_path)
             file_ids.append(media_message.video.file_id)
 
