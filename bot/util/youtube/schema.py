@@ -36,11 +36,16 @@ class YouTubeVideoData(BaseModel):
 
     @property
     def cache_key(self):
-        return f"yt:{self.yt.video_id}:{self.target_lang}"
+        return f"yt:{self.yt.video_id}:{self.translated_lang or self.source_lang or self.target_lang.ORIGINAL}"
 
     @property
     def caption(self):
-        return f'{self.yt.title} [{self.translated_lang or self.source_lang or self.target_lang} audio]\n\n{self.link}\nby @{settings.bot_username}'
+        return (
+            f'{self.yt.title} [{self.translated_lang or self.source_lang or self.target_lang.ORIGINAL} audio]\n'
+            f'\n'
+            f'{self.link}\n'
+            f'by @{settings.bot_username}'
+        )
 
     @property
     def media_group(self):
