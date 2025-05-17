@@ -94,8 +94,13 @@ def translate_audio(yt: YouTube, output_dir: str, target_lang: str) -> Path | No
         log.info('failed to translate %s to %s', yt.video_id, target_lang)
         return None
 
+    output_path = Path(output_dir) / output_file
+    if not output_path.exists():
+        log.info('failed to translate %s to %s, no audio file found after calling the subprocess', yt.video_id, target_lang)
+        return None
+
     log.info('translated audio downloaded to %s', output_file)
-    return Path(output_dir) / output_file
+    return output_path
 
 
 def mix_audio(
