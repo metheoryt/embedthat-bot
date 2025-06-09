@@ -15,6 +15,3 @@ dependencies = [
     "pytubefix>=8.12.1",
     "redis[hiredis]>=5.2.1",
 ]
-
-[tool.uv.sources]
-pytubefix = { git = "https://github.com/felipeucelli/pytubefix.git", branch = "jsinterp" }

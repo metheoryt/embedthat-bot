@@ -196,7 +196,7 @@ requires-dist = [
     { name = "pydub", specifier = ">=0.25.1" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "pytube", specifier = ">=15.0.0" },
-    { name = "pytubefix", git = "https://github.com/felipeucelli/pytubefix.git?branch=jsinterp" },
+    { name = "pytubefix", specifier = ">=8.12.1" },
     { name = "redis", extras = ["hiredis"], specifier = ">=5.2.1" },
 ]
 
@@ -875,8 +875,12 @@ wheels = [
 
 [[package]]
 name = "pytubefix"
-version = "8.13.1"
-source = { git = "https://github.com/felipeucelli/pytubefix.git?branch=jsinterp#5731c71d435f3935692a2f664cded00f6dfb892d" }
+version = "9.1.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/06/8570fb8fc1296dae7f156e4de57c2b351856e7813873178e1cbb8045eef3/pytubefix-9.1.1.tar.gz", hash = "sha256:68946ab2192d7bb9d8fcc0fe73f634bb0ab0cd33f2c3c718e65c0c4fbdbccbb1", size = 734325 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/fd/80ba35c78cbd007bfdb71d83b64087cca10e671cae4eb77875c952a21734/pytubefix-9.1.1-py3-none-any.whl", hash = "sha256:cc1c9cca936b82fcbf136e4630639417072aa5fdacf54ec0426604ca81c33b77", size = 732005 },
+]
 
 [[package]]
 name = "redis"
