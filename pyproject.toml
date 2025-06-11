@@ -15,3 +15,6 @@ dependencies = [
     "pytubefix>=8.12.1",
     "redis[hiredis]>=5.2.1",
 ]
+
+[tool.uv.sources]
+pytubefix = { git = "https://github.com/felipeucelli/pytubefix.git", rev = "dcc61960592190b33fd33f4e5b9613f9f96c55f3" }
