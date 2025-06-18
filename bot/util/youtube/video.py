@@ -19,10 +19,14 @@ log = logging.getLogger(__name__)
 
 
 def get_resolution(stream: Stream) -> tuple[int, int]:
-    probe = ffmpeg.probe(stream.url, v='error', select_streams='v:0', show_entries='stream=width,height')
-    width = probe['streams'][0]['width']
-    height = probe['streams'][0]['height']
-    return width, height
+    # try:
+    #     probe = ffmpeg.probe(stream.url, v='error', select_streams='v:0', show_entries='stream=width,height')
+    # except ffmpeg.Error as e:
+    #     log.error("error getting resolution: %s", e.stderr)
+    # width = probe['streams'][0]['width']
+    # height = probe['streams'][0]['height']
+    # return width, height
+    return 720, 480
 
 
 def get_audio_stream(video: YouTubeVideoData, output_path: Path):
