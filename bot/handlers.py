@@ -66,7 +66,7 @@ async def handle_youtube_video(message: Message, video: YouTubeVideoData) -> You
         if exc:
             log.error("finally failed to download youtube link %s: %r", video.link, exc)
             await on_yt_video_fail.send(video.link, message)
-            raise YouTubeError("finally failed to download youtube link") from exc
+            raise exc
 
         width, height = get_resolution(stream)
 
