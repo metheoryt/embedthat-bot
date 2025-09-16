@@ -155,7 +155,7 @@ async def embed_youtube_videos(message: types.Message):
 async def embed_tiktok(message: types.Message):
     await on_link_received.send(message, LinkOrigin.TIKTOK)
     link = message.text
-    new_link = link.replace("vm.tiktok", "vm.vxtiktok")
+    new_link = link.replace("vm.tiktok", "vm.kktiktok")
     await message.reply(new_link)
     await on_link_sent.send(new_link, message, origin=LinkOrigin.TIKTOK)
 
