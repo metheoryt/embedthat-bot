@@ -32,7 +32,8 @@ class YouTubeVideoData(BaseModel):
     @cached_property
     def yt(self):
         # https://github.com/JuanBindez/pytubefix/pull/209
-        return YouTube(self.link, "WEB")
+        # return YouTube(self.link, "WEB")
+        return YouTube(self.link)
 
     @property
     def cache_key(self):
@@ -41,21 +42,22 @@ class YouTubeVideoData(BaseModel):
     @property
     def caption(self):
         return (
-            f'{self.yt.title} [{self.translated_lang or self.source_lang or TargetLang.ORIGINAL} audio]\n'
-            f'\n'
-            f'{self.link}\n'
-            f'by @{settings.bot_username}'
+            f"{self.yt.title} [{self.translated_lang or self.source_lang or TargetLang.ORIGINAL} audio]\n"
+            f"\n"
+            f"{self.link}\n"
+            f"by @{settings.bot_username}"
         )
 
     @property
     def media_group(self):
         the_group = [
-                types.InputMediaVideo(
-                    media=file_id,
-                    width=self.width,
-                    height=self.height,
-                ) for i, file_id in enumerate(self.file_ids)
-            ]
+            types.InputMediaVideo(
+                media=file_id,
+                width=self.width,
+                height=self.height,
+            )
+            for i, file_id in enumerate(self.file_ids)
+        ]
         the_group[0].caption = self.caption
         return the_group
 

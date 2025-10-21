@@ -1,20 +1,22 @@
 services:
-  bot:
-    build: .
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-      - /app/.venv
-    restart: unless-stopped
-  redis:
-    image: redis/redis-stack:latest
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    environment:
-      REDIS_ARGS: "--save 60 1"
-    restart: unless-stopped
+    bot:
+        image: metheoryt/telegrind-bot:latest
+        build: .
+        env_file:
+            - .env
+        volumes:
+            - .:/app
+            - /app/.venv
+        restart: unless-stopped
+    redis:
+        image: redis/redis-stack:latest
+        ports:
+            - "6379:6379"
+        volumes:
+            - redis_data:/data
+        environment:
+            REDIS_ARGS: "--save 60 1"
+        restart: unless-stopped
+
 volumes:
-  redis_data:
+    redis_data:
