@@ -291,7 +291,7 @@ dependencies = [
 requires-dist = [
     { name = "aiogram", specifier = ">=3.17.0" },
     { name = "aiosignal", specifier = ">=1.3.2" },
-    { name = "faster-whisper", extras = ["cuda"], specifier = ">=1.2.0" },
+    { name = "faster-whisper", specifier = ">=1.2.0" },
     { name = "ffmpeg-python", specifier = ">=0.2.0" },
     { name = "pydantic-settings", specifier = ">=2.7.1" },
     { name = "pydub", specifier = ">=0.25.1" },
