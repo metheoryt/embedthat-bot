@@ -1,6 +1,6 @@
 services:
     bot:
-        image: metheoryt/telegrind-bot:latest
+        image: metheoryt/embedthat-bot:latest
         build: .
         env_file:
             - .env
