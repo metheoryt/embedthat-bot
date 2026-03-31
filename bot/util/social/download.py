@@ -2,11 +2,22 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+import ffmpeg
 import yt_dlp
 
 from .exc import SocialDownloadError
 
 log = logging.getLogger(__name__)
+
+
+def _probe_dimensions(file_path: Path) -> tuple[int, int]:
+    try:
+        probe = ffmpeg.probe(str(file_path), select_streams="v:0", show_entries="stream=width,height")
+        stream = probe["streams"][0]
+        return stream["width"], stream["height"]
+    except Exception as e:
+        log.warning("ffprobe failed for %s: %s", file_path, e)
+        return 0, 0
 
 
 @dataclass
@@ -57,11 +68,16 @@ def download_social_video(url: str, output_dir: Path) -> DownloadResult:
     if not file_path.exists():
         raise SocialDownloadError(f"Downloaded file not found: {file_path}")
 
+    width = info.get("width") or 0
+    height = info.get("height") or 0
+    if not width or not height:
+        width, height = _probe_dimensions(file_path)
+
     dr = DownloadResult(
         file_path=file_path,
         video_id=video_id,
-        width=info.get("width") or 0,
-        height=info.get("height") or 0,
+        width=width,
+        height=height,
         title=info.get("title") or "",
         duration=int(info.get("duration") or 0),
         extractor=info.get("extractor_key") or "unknown",
