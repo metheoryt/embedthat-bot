@@ -43,9 +43,7 @@ class YouTubeVideoData(BaseModel):
     def caption(self):
         return (
             f"{self.yt.title} [{self.translated_lang or self.source_lang or TargetLang.ORIGINAL} audio]\n"
-            f"\n"
             f"{self.link}\n"
-            f"by @{settings.bot_username}"
         )
 
     @property
