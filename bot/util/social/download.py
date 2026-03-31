@@ -17,6 +17,7 @@ class DownloadResult:
     height: int
     title: str
     duration: int  # seconds
+    extractor: str  # yt-dlp extractor key, e.g. "TikTok", "Instagram", "Twitter"
 
 
 def download_social_video(url: str, output_dir: Path) -> DownloadResult:
@@ -56,11 +57,14 @@ def download_social_video(url: str, output_dir: Path) -> DownloadResult:
     if not file_path.exists():
         raise SocialDownloadError(f"Downloaded file not found: {file_path}")
 
-    return DownloadResult(
+    dr = DownloadResult(
         file_path=file_path,
         video_id=video_id,
         width=info.get("width") or 0,
         height=info.get("height") or 0,
         title=info.get("title") or "",
         duration=int(info.get("duration") or 0),
+        extractor=info.get("extractor_key") or "unknown",
     )
+    log.info("downloaded %s", dr)
+    return dr

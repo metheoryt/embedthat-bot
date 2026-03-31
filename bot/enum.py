@@ -7,3 +7,4 @@ class LinkOrigin(StrEnum):
     YOUTUBE = 'youtube'
     TWITTER = 'twitter'
     X = 'x'
+    SOCIAL = 'social'

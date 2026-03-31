@@ -6,7 +6,7 @@ from bot.config import settings
 
 class SocialVideoData(BaseModel):
     link: str
-    origin: str  # "tiktok" or "instagram"
+    origin: str = ""
     file_ids: list[str] = Field(default_factory=list)
     video_id: str | None = None
     width: int | None = None

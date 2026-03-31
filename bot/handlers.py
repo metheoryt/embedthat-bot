@@ -19,7 +19,7 @@ from .enum import LinkOrigin
 from .events import (
     on_yt_video_sent, on_yt_video_fail,
     on_social_video_sent, on_social_video_fail,
-    on_link_sent, on_link_received,
+    on_link_received,
 )
 from .util.chat_action import send_chat_action_periodically
 from .util.redis import redis_client
@@ -32,8 +32,12 @@ from .util.youtube.video import get_resolution, check_download_adaptive, split_v
 log = logging.getLogger(__name__)
 
 
-def _social_cache_key(origin: str, link: str) -> str:
-    return f"social:{origin}:{hashlib.sha256(link.encode()).hexdigest()[:16]}"
+def _social_cache_key(link: str) -> str:
+    return f"dl:{hashlib.sha256(link.encode()).hexdigest()[:16]}"
+
+
+_URL_RE = re.compile(r"https?://\S+")
+_YOUTUBE_URL_RE = re.compile(r"https?://((www|m)\.)?youtube\.com/|https?://youtu\.be/")
 
 
 @router.error()
@@ -156,6 +160,7 @@ async def handle_social_video(message: Message, video: SocialVideoData) -> Socia
         video.width = result.width
         video.height = result.height
         video.title = result.title
+        video.origin = result.extractor.lower()
 
         file_size = result.file_path.stat().st_size
         if file_size <= MAX_FILE_SIZE_BYTES:
@@ -273,14 +278,8 @@ async def embed_youtube_videos(message: types.Message):
         await on_yt_video_sent.send(link, message, video=video, fresh=True)
 
 
-_TIKTOK_RE = re.compile(r"^https://(vm\.tiktok\.com/|www\.tiktok\.com/|tiktok\.com/)\S*")
-
-
-@router.message(F.text.regexp(_TIKTOK_RE))
-async def embed_tiktok(message: types.Message):
-    await on_link_received.send(message, LinkOrigin.TIKTOK)
-    link = message.text.split()[0]
-    cache_key = _social_cache_key("tiktok", link)
+async def _process_social_url(message: Message, url: str) -> None:
+    cache_key = _social_cache_key(url)
 
     async with Lock(redis_client, f'{cache_key}:lock', timeout=10*60, blocking_timeout=11*60):
         if video_raw := await redis_client.get(cache_key):
@@ -292,99 +291,42 @@ async def embed_tiktok(message: types.Message):
                 log.info("cached file ids invalid, clearing cache for %s", cache_key)
                 await redis_client.delete(cache_key)
             else:
-                await on_social_video_sent.send(link, message, video=video, fresh=False)
+                await on_social_video_sent.send(url, message, video=video, fresh=False)
                 return
 
         log.info("cache miss for %s", cache_key)
-        action_task = await send_chat_action_periodically(message.bot, message.chat.id, ChatAction.UPLOAD_VIDEO)
         try:
-            video = SocialVideoData.model_validate(dict(link=link, origin="tiktok"))
+            video = SocialVideoData.model_validate(dict(link=url))
             video, already_sent = await handle_social_video(message, video)
         except SocialDownloadError as e:
-            log.error("unrecoverable TikTok download error for %s: %r", link, e)
-            # await message.reply("Sorry, could not download this TikTok video.")
+            log.info("yt-dlp could not download %s: %r", url, e)
             return
         except Exception as e:
-            log.error("unexpected error for TikTok %s: %r", link, e)
-            # await message.reply("Sorry, something went wrong while downloading this video.")
+            log.error("unexpected error downloading %s: %r", url, e)
             return
-        finally:
-            action_task.cancel()
-            try:
-                await action_task
-            except asyncio.CancelledError:
-                pass
 
         await redis_client.set(cache_key, video.model_dump_json())
-        log.info("cached social video %s", cache_key)
+        log.info("cached %s (%s)", cache_key, video.origin)
         if not already_sent:
             await video.reply_to(message)
-        await on_social_video_sent.send(link, message, video=video, fresh=True)
+        await on_social_video_sent.send(url, message, video=video, fresh=True)
 
 
-@router.message(F.text.startswith("https://www.instagram.com/"))
-async def embed_instagram(message: types.Message):
-    if message.text.startswith("https://www.instagram.com/stories/"):
-        # stories require login
+@router.message(F.text.regexp(r"https?://"))
+async def embed_social(message: types.Message):
+    urls = [u for u in _URL_RE.findall(message.text) if not _YOUTUBE_URL_RE.match(u)]
+    if not urls:
         return
 
-    await on_link_received.send(message, LinkOrigin.INSTAGRAM)
-    link = message.text.split()[0]
-    cache_key = _social_cache_key("instagram", link)
+    await on_link_received.send(message, LinkOrigin.SOCIAL)
 
-    async with Lock(redis_client, f'{cache_key}:lock', timeout=10*60, blocking_timeout=11*60):
-        if video_raw := await redis_client.get(cache_key):
-            video = SocialVideoData.model_validate_json(video_raw)
-            log.info("cache hit for %s", cache_key)
-            try:
-                await video.reply_to(message)
-            except TelegramBadRequest:
-                log.info("cached file ids invalid, clearing cache for %s", cache_key)
-                await redis_client.delete(cache_key)
-            else:
-                await on_social_video_sent.send(link, message, video=video, fresh=False)
-                return
-
-        log.info("cache miss for %s", cache_key)
-        action_task = await send_chat_action_periodically(message.bot, message.chat.id, ChatAction.UPLOAD_VIDEO)
+    action_task = await send_chat_action_periodically(message.bot, message.chat.id, ChatAction.UPLOAD_VIDEO)
+    try:
+        for url in urls:
+            await _process_social_url(message, url)
+    finally:
+        action_task.cancel()
         try:
-            video = SocialVideoData.model_validate(dict(link=link, origin="instagram"))
-            video, already_sent = await handle_social_video(message, video)
-        except SocialDownloadError as e:
-            log.error("unrecoverable Instagram download error for %s: %r", link, e)
-            # await message.reply("Sorry, could not download this Instagram video.")
-            return
-        except Exception as e:
-            log.error("unexpected error for Instagram %s: %r", link, e)
-            # await message.reply("Sorry, something went wrong while downloading this video.")
-            return
-        finally:
-            action_task.cancel()
-            try:
-                await action_task
-            except asyncio.CancelledError:
-                pass
-
-        await redis_client.set(cache_key, video.model_dump_json())
-        log.info("cached social video %s", cache_key)
-        if not already_sent:
-            await video.reply_to(message)
-        await on_social_video_sent.send(link, message, video=video, fresh=True)
-
-
-@router.message(F.text.startswith("https://x.com/"))
-async def embed_x(message: types.Message):
-    await on_link_received.send(message, LinkOrigin.X)
-    link = message.text
-    new_link = link.replace("https://x.com/", "https://fixupx.com/")
-    await message.reply(new_link)
-    await on_link_sent.send(new_link, message, origin=LinkOrigin.X)
-
-
-@router.message(F.text.startswith("https://twitter.com/"))
-async def embed_twitter(message: types.Message):
-    await on_link_received.send(message, LinkOrigin.TWITTER)
-    link = message.text
-    new_link = link.replace("https://twitter.com/", "https://fxtwitter.com/")
-    await message.reply(new_link)
-    await on_link_sent.send(new_link, message, origin=LinkOrigin.TWITTER)
+            await action_task
+        except asyncio.CancelledError:
+            pass
