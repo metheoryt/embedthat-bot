@@ -37,7 +37,7 @@ class YouTubeVideoData(BaseModel):
 
     @property
     def cache_key(self):
-        return f"yt:{self.yt.video_id}:{self.translated_lang or self.source_lang or self.target_lang}"
+        return f"yt:{self.yt.video_id}:{self.translated_lang or self.target_lang}"
 
     @property
     def caption(self):
@@ -56,7 +56,7 @@ class YouTubeVideoData(BaseModel):
                 width=self.width,
                 height=self.height,
             )
-            for i, file_id in enumerate(self.file_ids)
+            for file_id in self.file_ids
         ]
         the_group[0].caption = self.caption
         return the_group

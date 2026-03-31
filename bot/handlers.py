@@ -29,12 +29,14 @@ async def error_handler(event: ErrorEvent):
     log.critical("Critical error caused by %s", event.exception, exc_info=True)
     if settings.admin_chat_id:
         message = event.update.message
-        msg = f"""
-Exception:
-`{event.exception!r}`
-Message text:
-`{message.text}`
-""".strip()
+        if not message:
+            return
+        msg = f"""\
+            Exception:
+            `{event.exception!r}`
+            Message text:
+            `{message.text}`
+            """
         await message.bot.send_message(settings.admin_chat_id, msg, parse_mode="MarkdownV2")
 
 
@@ -154,7 +156,7 @@ async def embed_youtube_videos(message: types.Message):
 @router.message(F.text.startswith("https://vm.tiktok.com/"))
 async def embed_tiktok(message: types.Message):
     await on_link_received.send(message, LinkOrigin.TIKTOK)
-    link = message.text
+    link = message.text.split()[0]
     new_link = link.replace("vm.tiktok", "vm.kktiktok")
     await message.reply(new_link)
     await on_link_sent.send(new_link, message, origin=LinkOrigin.TIKTOK)

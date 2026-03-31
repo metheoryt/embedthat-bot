@@ -3,13 +3,22 @@ import subprocess
 from pathlib import Path
 
 from faster_whisper import WhisperModel
-
-# import whisper
 from pydub import AudioSegment
 from pytubefix import YouTube
 
 from .enum import SourceLang
 from .schema import YouTubeVideoData
+
+log = logging.getLogger(__name__)
+
+_whisper_model: WhisperModel | None = None
+
+
+def _get_whisper_model() -> WhisperModel:
+    global _whisper_model
+    if _whisper_model is None:
+        _whisper_model = WhisperModel("tiny", device="cpu")
+    return _whisper_model
 
 
 def maybe_translate_audio(
@@ -45,11 +54,8 @@ def maybe_translate_audio(
     return result_audio_path
 
 
-log = logging.getLogger(__name__)
-
-
 def detect_source_lang(audio_path: str) -> SourceLang | None:
-    model = WhisperModel("tiny", device="cpu")
+    model = _get_whisper_model()
 
     # Transcribe just to get language info (no need to iterate over segments)
     _, info = model.transcribe(audio_path, beam_size=5)
@@ -70,32 +76,6 @@ def detect_source_lang(audio_path: str) -> SourceLang | None:
     return lang
 
 
-# def detect_source_lang(audio_path: str) -> SourceLang | None:
-#     model = whisper.load_model("tiny")
-
-#     # Load and process the audio file
-#     audio = whisper.load_audio(audio_path)
-#     audio = whisper.pad_or_trim(audio)
-#     mel = whisper.log_mel_spectrogram(audio).to(model.device)
-
-#     # Detect language from the audio
-#     tensor, lang_probs = model.detect_language(mel)
-#     code, prob = sorted(lang_probs.items(), key=lambda x: x[1], reverse=True)[0]
-
-#     if prob < 0.1:
-#         # Very low confidence, likely music
-#         log.info("%s lang confidence is %d, assuming music", code, prob)
-#         return SourceLang.MISSING
-
-#     if code not in SourceLang:
-#         log.info("%s detected but is not supported", code)
-#         return None
-
-#     lang = SourceLang(code)
-#     log.info("%s detected with %.3f confidence", lang, prob)
-#     return lang
-
-
 def translate_audio(yt: YouTube, output_dir: str, target_lang: str) -> Path | None:
     output_file = Path(f"{yt.video_id}.translated.{target_lang}.mp3")
     command = [
@@ -110,17 +90,15 @@ def translate_audio(yt: YouTube, output_dir: str, target_lang: str) -> Path | No
         subprocess.run(
             command,
             check=True,
-            # stdout=subprocess.DEVNULL,
-            # stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             timeout=120,
         )
     except subprocess.CalledProcessError:
-        # failed to translate
         log.info("failed to translate %s to %s", yt.video_id, target_lang)
         return None
     except subprocess.TimeoutExpired:
-        # failed to translate in 2 minutes
-        log.info("failed to translate %s to %s", yt.video_id, target_lang)
+        log.info("failed to translate %s to %s (timeout)", yt.video_id, target_lang)
         return None
 
     output_path = Path(output_dir) / output_file
@@ -152,16 +130,12 @@ def mix_audio(
     """
     log.info("mixing %s and %s", original_audio_path, translated_audio_path)
 
-    # Load both audio files
     original_audio = AudioSegment.from_file(original_audio_path)
     translated_audio = AudioSegment.from_file(translated_audio_path)
 
-    # Reduce the volume of the original audio
-    original_audio = (
-        original_audio + original_volume_db
-    )  # Reduces volume in dB (e.g., -10 dB to make it quieter)
+    original_audio = original_audio + original_volume_db
 
-    # Make sure both audio files are the same length, trimming or padding as necessary
+    # Pad the shorter track with silence so both are equal length
     if len(original_audio) > len(translated_audio):
         translated_audio = translated_audio + AudioSegment.silent(
             duration=len(original_audio) - len(translated_audio)
@@ -171,30 +145,5 @@ def mix_audio(
             duration=len(translated_audio) - len(original_audio)
         )
 
-    # Mix both audio files
     mixed_audio = original_audio.overlay(translated_audio)
-
-    # Export the mixed audio to a file
     mixed_audio.export(output_path, format="mp3")
-
-    #
-    # Go with pydub because it makes a louder sound overall
-    #
-
-    # command = [
-    #     'ffmpeg',
-    #     '-i', original_audio_path,
-    #     '-i', translated_audio_path,
-    #     '-filter_complex', f'[0:a]volume=0.3[a0];[a0][1:a]amix=inputs=2:duration=longest[aout]',
-    #     '-map', '[aout]',
-    #     '-c:a', 'libmp3lame',
-    #     '-q:a', '4',
-    #     str(output_path)
-    # ]
-    #
-    # subprocess.run(
-    #     command,
-    #     check=True,
-    #     stdout=subprocess.DEVNULL,
-    #     stderr=subprocess.DEVNULL,
-    # )
