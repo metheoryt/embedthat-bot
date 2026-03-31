@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 from bot.events.signals import (
     on_link_received,
     on_yt_video_sent,
@@ -9,12 +7,13 @@ from bot.events.signals import (
     signal_handler,
 )
 from bot.util.redis import redis_client
+from bot.config import settings
 
 _TTL = 90 * 24 * 3600  # 90 days
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return settings.now().strftime("%Y-%m-%d")
 
 
 async def _incr(key: str) -> None:
@@ -32,9 +31,11 @@ async def stats_link_received(message, origin):
     if not message.from_user:
         return
     d = _today()
+    lang = (message.from_user.language_code or "unknown").lower()
     await _incr(f"stats:{d}:requests")
     await _sadd(f"stats:{d}:users", str(message.from_user.id))
     await _incr(f"stats:{d}:chat:{message.chat.type}")
+    await _incr(f"stats:{d}:lang:{lang}")
 
 
 @signal_handler(on_yt_video_sent)

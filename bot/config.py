@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 from pydantic import RedisDsn, Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,6 +22,14 @@ class Settings(BaseSettings):
 
     # populated on setup
     bot_username: str | None = None
+    tz: str | None = None
+
+    @property
+    def timezone(self) -> ZoneInfo:
+        return ZoneInfo(self.tz or "UTC")
+
+    def now(self):
+        return datetime.now(self.timezone)
 
 
 # noinspection PyArgumentList

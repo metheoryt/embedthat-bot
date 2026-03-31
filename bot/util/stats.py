@@ -1,19 +1,18 @@
 import asyncio
-import os
-from datetime import date, timedelta, datetime
-from zoneinfo import ZoneInfo
+from datetime import date, timedelta
 
 from bot.util.redis import redis_client
-
-_tz = ZoneInfo(os.environ.get("TZ", "UTC"))
+from bot.config import settings
 
 
 async def _period_stats(dates: list[str]) -> dict:
     all_success_keys: list[str] = []
+    all_lang_keys: list[str] = []
     for d in dates:
-        keys = await redis_client.keys(f"stats:{d}:success:*")
-        all_success_keys.extend(keys)
+        all_success_keys.extend(await redis_client.keys(f"stats:{d}:success:*"))
+        all_lang_keys.extend(await redis_client.keys(f"stats:{d}:lang:*"))
     platforms = sorted({k.split(":")[-1] for k in all_success_keys})
+    langs = sorted({k.split(":")[-1] for k in all_lang_keys})
 
     counter_keys: list[str] = []
     for d in dates:
@@ -28,6 +27,8 @@ async def _period_stats(dates: list[str]) -> dict:
         ]
         for platform in platforms:
             counter_keys.append(f"stats:{d}:success:{platform}")
+        for lang in langs:
+            counter_keys.append(f"stats:{d}:lang:{lang}")
 
     counter_map: dict[str, int] = {}
     if counter_keys:
@@ -43,6 +44,7 @@ async def _period_stats(dates: list[str]) -> dict:
         return sum(counter_map.get(f"stats:{d}:{key_suffix}", 0) for d in dates)
 
     platform_counts = {p: s(f"success:{p}") for p in platforms}
+    lang_counts = {l: s(f"lang:{l}") for l in langs}
 
     return {
         "requests": s("requests"),
@@ -52,6 +54,7 @@ async def _period_stats(dates: list[str]) -> dict:
         "private": s("chat:private"),
         "groups": s("chat:group") + s("chat:supergroup") + s("chat:channel"),
         "platforms": platform_counts,
+        "langs": lang_counts,
     }
 
 
@@ -75,11 +78,16 @@ def _fmt_section(title: str, stats: dict) -> str:
             f"{p.capitalize()}: {c}"
             for p, c in sorted(stats["platforms"].items(), key=lambda x: -x[1])
         ))
+    if stats["langs"]:
+        lines.append("  " + " | ".join(
+            f"{l}: {c}"
+            for l, c in sorted(stats["langs"].items(), key=lambda x: -x[1])
+        ))
     return "\n".join(lines)
 
 
 async def build_stats_report() -> str:
-    today = datetime.now(_tz).date()
+    today = settings.now().date()
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
 
