@@ -31,6 +31,19 @@ def download_social_video(url: str, output_dir: Path) -> DownloadResult:
         "merge_output_format": "mp4",
         "quiet": True,
         "noplaylist": True,
+        # Re-encode to H.264/AAC with iOS-compatible settings:
+        # - yuv420p: iOS requires 8-bit 4:2:0 chroma
+        # - faststart: moves moov atom to front so iOS can start playback immediately
+        # - profile main: avoids B-frame issues on some decoders
+        "postprocessor_args": {
+            "merger": [
+                "-vcodec", "libx264",
+                "-profile:v", "main",
+                "-pix_fmt", "yuv420p",
+                "-acodec", "aac",
+                "-movflags", "+faststart",
+            ],
+        },
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
