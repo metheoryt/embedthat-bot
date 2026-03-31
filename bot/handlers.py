@@ -57,7 +57,7 @@ async def start(message: types.Message):
     await message.reply("Send a link and i will reply with a nice embedding or a video")
 
 
-async def handle_youtube_video(message: Message, video: YouTubeVideoData) -> YouTubeVideoData:
+async def handle_youtube_video(message: Message, video: YouTubeVideoData) -> tuple[YouTubeVideoData, bool]:
     with tempfile.TemporaryDirectory() as tmp:
         exc = None
         for i in range(3):
@@ -83,19 +83,18 @@ async def handle_youtube_video(message: Message, video: YouTubeVideoData) -> You
             raise exc
 
         width, height = get_resolution(stream)
+        video.width = width
+        video.height = height
 
-        log.info('sending %d files to dump chat to obtain file ids', len(file_paths))
-        # If there are more than 1 part, send them one-by-one first and reuse file ids
-        file_ids = []
-        for file_path in file_paths:
-            # Send the file and get its file_id
+        if len(file_paths) == 1:
+            log.info('sending single file directly to user')
             for i in range(3):
                 try:
-                    media_message = await message.bot.send_video(
-                        settings.dump_chat_id,
-                        types.FSInputFile(file_path),
+                    sent = await message.reply_video(
+                        types.FSInputFile(file_paths[0]),
                         width=width,
-                        height=height
+                        height=height,
+                        caption=video.caption,
                     )
                     break
                 except TelegramNetworkError:
@@ -103,15 +102,32 @@ async def handle_youtube_video(message: Message, video: YouTubeVideoData) -> You
                         raise
                     log.warning('failed to send a video file, retrying in 2 seconds')
                     await asyncio.sleep(2)
-                    continue
+            video.file_ids = [sent.video.file_id]
+            return video, True
+
+        log.info('sending %d parts to dump chat to obtain file ids', len(file_paths))
+        file_ids = []
+        for file_path in file_paths:
+            for i in range(3):
+                try:
+                    media_message = await message.bot.send_video(
+                        settings.dump_chat_id,
+                        types.FSInputFile(file_path),
+                        width=width,
+                        height=height,
+                    )
+                    break
+                except TelegramNetworkError:
+                    if i == 2:
+                        raise
+                    log.warning('failed to send a video file, retrying in 2 seconds')
+                    await asyncio.sleep(2)
 
             log.info("sent %s", file_path)
             file_ids.append(media_message.video.file_id)
 
         video.file_ids = file_ids
-        video.width = width
-        video.height = height
-        return video
+        return video, False
 
 
 async def handle_social_video(message: Message, video: SocialVideoData) -> SocialVideoData:
@@ -163,7 +179,26 @@ async def handle_social_video(message: Message, video: SocialVideoData) -> Socia
                     n_parts=n_parts,
                 )
 
-        log.info("sending %d part(s) to dump chat for %s", len(file_paths), video.link)
+        if len(file_paths) == 1:
+            log.info('sending single file directly to user for %s', video.link)
+            for i in range(3):
+                try:
+                    sent = await message.reply_video(
+                        types.FSInputFile(file_paths[0]),
+                        width=video.width,
+                        height=video.height,
+                        caption=video.caption,
+                    )
+                    break
+                except TelegramNetworkError:
+                    if i == 2:
+                        raise
+                    log.warning("TelegramNetworkError sending social video, retrying")
+                    await asyncio.sleep(2)
+            video.file_ids = [sent.video.file_id]
+            return video, True
+
+        log.info("sending %d parts to dump chat for %s", len(file_paths), video.link)
         file_ids = []
         for file_path in file_paths:
             for i in range(3):
@@ -184,7 +219,7 @@ async def handle_social_video(message: Message, video: SocialVideoData) -> Socia
             file_ids.append(media_message.video.file_id)
 
         video.file_ids = file_ids
-        return video
+        return video, False
 
 
 @router.message(
@@ -221,7 +256,7 @@ async def embed_youtube_videos(message: types.Message):
         action_task = await send_chat_action_periodically(message.bot, message.chat.id, ChatAction.UPLOAD_VIDEO)
 
         try:
-            video = await handle_youtube_video(message, video)
+            video, already_sent = await handle_youtube_video(message, video)
         finally:
             action_task.cancel()
             try:
@@ -232,8 +267,8 @@ async def embed_youtube_videos(message: types.Message):
         await redis_client.set(video.cache_key, video.model_dump_json())
         log.info("cached %s (%d files)", video.cache_key, len(video.file_ids))
 
-        # send prepared and cached video to the user
-        await video.reply_to(message)
+        if not already_sent:
+            await video.reply_to(message)
 
         await on_yt_video_sent.send(link, message, video=video, fresh=True)
 
@@ -264,14 +299,14 @@ async def embed_tiktok(message: types.Message):
         action_task = await send_chat_action_periodically(message.bot, message.chat.id, ChatAction.UPLOAD_VIDEO)
         try:
             video = SocialVideoData.model_validate(dict(link=link, origin="tiktok"))
-            video = await handle_social_video(message, video)
+            video, already_sent = await handle_social_video(message, video)
         except SocialDownloadError as e:
             log.error("unrecoverable TikTok download error for %s: %r", link, e)
-            await message.reply("Sorry, could not download this TikTok video.")
+            # await message.reply("Sorry, could not download this TikTok video.")
             return
         except Exception as e:
             log.error("unexpected error for TikTok %s: %r", link, e)
-            await message.reply("Sorry, something went wrong while downloading this video.")
+            # await message.reply("Sorry, something went wrong while downloading this video.")
             return
         finally:
             action_task.cancel()
@@ -282,7 +317,8 @@ async def embed_tiktok(message: types.Message):
 
         await redis_client.set(cache_key, video.model_dump_json())
         log.info("cached social video %s", cache_key)
-        await video.reply_to(message)
+        if not already_sent:
+            await video.reply_to(message)
         await on_social_video_sent.send(link, message, video=video, fresh=True)
 
 
@@ -313,14 +349,14 @@ async def embed_instagram(message: types.Message):
         action_task = await send_chat_action_periodically(message.bot, message.chat.id, ChatAction.UPLOAD_VIDEO)
         try:
             video = SocialVideoData.model_validate(dict(link=link, origin="instagram"))
-            video = await handle_social_video(message, video)
+            video, already_sent = await handle_social_video(message, video)
         except SocialDownloadError as e:
             log.error("unrecoverable Instagram download error for %s: %r", link, e)
-            await message.reply("Sorry, could not download this Instagram video.")
+            # await message.reply("Sorry, could not download this Instagram video.")
             return
         except Exception as e:
             log.error("unexpected error for Instagram %s: %r", link, e)
-            await message.reply("Sorry, something went wrong while downloading this video.")
+            # await message.reply("Sorry, something went wrong while downloading this video.")
             return
         finally:
             action_task.cancel()
@@ -331,7 +367,8 @@ async def embed_instagram(message: types.Message):
 
         await redis_client.set(cache_key, video.model_dump_json())
         log.info("cached social video %s", cache_key)
-        await video.reply_to(message)
+        if not already_sent:
+            await video.reply_to(message)
         await on_social_video_sent.send(link, message, video=video, fresh=True)
 
 
