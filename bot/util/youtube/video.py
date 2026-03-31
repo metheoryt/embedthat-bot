@@ -19,13 +19,23 @@ log = logging.getLogger(__name__)
 
 
 def get_resolution(stream: Stream) -> tuple[int, int]:
-    # try:
-    #     probe = ffmpeg.probe(stream.url, v='error', select_streams='v:0', show_entries='stream=width,height')
-    # except ffmpeg.Error as e:
-    #     log.error("error getting resolution: %s", e.stderr)
-    # width = probe['streams'][0]['width']
-    # height = probe['streams'][0]['height']
-    # return width, height
+    try:
+        probe = ffmpeg.probe(stream.url, v='error', select_streams='v:0', show_entries='stream=width,height')
+        width = probe['streams'][0]['width']
+        height = probe['streams'][0]['height']
+        log.info("probed resolution %dx%d for %s", width, height, stream)
+        return width, height
+    except (ffmpeg.Error, KeyError, IndexError) as e:
+        log.warning("ffmpeg probe failed, falling back to stream metadata: %s", e)
+
+    if stream.width and stream.height:
+        return stream.width, stream.height
+
+    # last resort: parse the resolution string (e.g. "720p" → height=720)
+    if stream.resolution:
+        height = int(stream.resolution.replace('p', ''))
+        return height * 16 // 9, height
+
     return 720, 480
 
 
