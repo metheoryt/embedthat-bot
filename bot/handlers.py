@@ -9,7 +9,7 @@ from pathlib import Path
 from aiogram import types, F
 from aiogram.enums import ChatAction
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import ErrorEvent, Message
 from redis.asyncio.lock import Lock
 
@@ -22,6 +22,7 @@ from .events import (
     on_link_received,
 )
 from .util.chat_action import send_chat_action_periodically
+from .util.stats import build_stats_report
 from .util.redis import redis_client
 from .util.social import SocialVideoData, SocialDownloadError, download_social_video
 from .util.youtube.enum import TargetLang
@@ -59,6 +60,13 @@ async def error_handler(event: ErrorEvent):
 @router.message(CommandStart())
 async def start(message: types.Message):
     await message.reply("Send a link and i will reply with a nice embedding or a video")
+
+
+@router.message(Command("stats"))
+async def cmd_stats(message: types.Message):
+    if not settings.admin_chat_id or message.chat.id != settings.admin_chat_id:
+        return
+    await message.reply(await build_stats_report())
 
 
 async def handle_youtube_video(message: Message, video: YouTubeVideoData) -> tuple[YouTubeVideoData, bool]:
