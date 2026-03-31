@@ -10,7 +10,11 @@ def signal_handler(signal: Signal):
 
 
 def freeze_signals():
-    for sig in [on_link_received, on_link_sent, on_yt_video_sent, on_yt_video_fail]:
+    for sig in [
+        on_link_received, on_link_sent,
+        on_yt_video_sent, on_yt_video_fail,
+        on_social_video_sent, on_social_video_fail,
+    ]:
         sig.freeze()
 
 
@@ -19,6 +23,12 @@ on_yt_video_sent = Signal(
 )
 on_yt_video_fail = Signal(
     "on_yt_video_fail(link: str, message: Message)"
+)
+on_social_video_sent = Signal(
+    "on_social_video_sent(link: str, message: Message, video: SocialVideoData, fresh: bool)"
+)
+on_social_video_fail = Signal(
+    "on_social_video_fail(link: str, message: Message)"
 )
 on_link_sent = Signal("on_link_sent(link: str, message: Message, origin: LinkOrigin)")
 on_link_received = Signal("on_link_received(message: Message, origin: LinkOrigin)")

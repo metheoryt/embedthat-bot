@@ -6,7 +6,7 @@ services:
             - .env
         volumes:
             - .:/app
-            - /app/.venv
+            - bot_venv:/app/.venv
         restart: unless-stopped
     redis:
         image: redis/redis-stack:latest
@@ -20,3 +20,4 @@ services:
 
 volumes:
     redis_data:
+    bot_venv:

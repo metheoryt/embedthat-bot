@@ -1,6 +1,10 @@
 import asyncio
+import hashlib
 import logging
+import math
+import re
 import tempfile
+from pathlib import Path
 
 from aiogram import types, F
 from aiogram.enums import ChatAction
@@ -12,16 +16,24 @@ from redis.asyncio.lock import Lock
 from .config import settings
 from .dispatcher import router
 from .enum import LinkOrigin
-from .events import on_yt_video_sent, on_yt_video_fail, on_link_sent, on_link_received
-from .util.aiohttp import session
+from .events import (
+    on_yt_video_sent, on_yt_video_fail,
+    on_social_video_sent, on_social_video_fail,
+    on_link_sent, on_link_received,
+)
 from .util.chat_action import send_chat_action_periodically
 from .util.redis import redis_client
+from .util.social import SocialVideoData, SocialDownloadError, download_social_video
 from .util.youtube.enum import TargetLang
 from .util.youtube.exc import YouTubeError
 from .util.youtube.schema import YouTubeVideoData
-from .util.youtube.video import get_resolution, check_download_adaptive
+from .util.youtube.video import get_resolution, check_download_adaptive, split_video, MAX_FILE_SIZE_BYTES
 
 log = logging.getLogger(__name__)
+
+
+def _social_cache_key(origin: str, link: str) -> str:
+    return f"social:{origin}:{hashlib.sha256(link.encode()).hexdigest()[:16]}"
 
 
 @router.error()
@@ -102,6 +114,79 @@ async def handle_youtube_video(message: Message, video: YouTubeVideoData) -> You
         return video
 
 
+async def handle_social_video(message: Message, video: SocialVideoData) -> SocialVideoData:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        exc = None
+
+        for i in range(3):
+            try:
+                result = await asyncio.to_thread(download_social_video, video.link, tmp_path)
+                exc = None
+                break
+            except SocialDownloadError:
+                raise  # unrecoverable — private account, removed video, geo-block
+            except Exception as ex:
+                exc = ex
+                log.error("failed to download social %s on try #%d: %r", video.link, i + 1, exc)
+                await asyncio.sleep(2)
+
+        if exc:
+            log.error("finally failed to download social link %s: %r", video.link, exc)
+            await on_social_video_fail.send(video.link, message)
+            raise exc
+
+        video.video_id = result.video_id
+        video.width = result.width
+        video.height = result.height
+        video.title = result.title
+
+        file_size = result.file_path.stat().st_size
+        if file_size <= MAX_FILE_SIZE_BYTES:
+            file_paths = [result.file_path]
+        else:
+            n_parts = math.ceil(file_size / MAX_FILE_SIZE_BYTES)
+            file_paths = split_video(
+                duration_seconds=result.duration,
+                input_path=result.file_path,
+                output_dir=tmp_path,
+                n_parts=n_parts,
+            )
+            while any(p.stat().st_size > MAX_FILE_SIZE_BYTES for p in file_paths):
+                n_parts += 1
+                if n_parts > 10:
+                    raise SocialDownloadError("Video too large, cannot split into <= 10 parts")
+                file_paths = split_video(
+                    duration_seconds=result.duration,
+                    input_path=result.file_path,
+                    output_dir=tmp_path,
+                    n_parts=n_parts,
+                )
+
+        log.info("sending %d part(s) to dump chat for %s", len(file_paths), video.link)
+        file_ids = []
+        for file_path in file_paths:
+            for i in range(3):
+                try:
+                    media_message = await message.bot.send_video(
+                        settings.dump_chat_id,
+                        types.FSInputFile(file_path),
+                        width=video.width,
+                        height=video.height,
+                    )
+                    break
+                except TelegramNetworkError:
+                    if i == 2:
+                        raise
+                    log.warning("TelegramNetworkError uploading social video part, retrying")
+                    await asyncio.sleep(2)
+            log.info("uploaded %s → file_id %s", file_path.name, media_message.video.file_id)
+            file_ids.append(media_message.video.file_id)
+
+        video.file_ids = file_ids
+        return video
+
+
 @router.message(
     F.text.regexp(r"^https://(((www|m)\.)?youtube\.com/(watch|shorts/)|youtu\.be/)")
 )
@@ -153,13 +238,52 @@ async def embed_youtube_videos(message: types.Message):
         await on_yt_video_sent.send(link, message, video=video, fresh=True)
 
 
-@router.message(F.text.startswith("https://vm.tiktok.com/"))
+_TIKTOK_RE = re.compile(r"^https://(vm\.tiktok\.com/|www\.tiktok\.com/|tiktok\.com/)\S*")
+
+
+@router.message(F.text.regexp(_TIKTOK_RE))
 async def embed_tiktok(message: types.Message):
     await on_link_received.send(message, LinkOrigin.TIKTOK)
     link = message.text.split()[0]
-    new_link = link.replace("vm.tiktok", "vm.kktiktok")
-    await message.reply(new_link)
-    await on_link_sent.send(new_link, message, origin=LinkOrigin.TIKTOK)
+    cache_key = _social_cache_key("tiktok", link)
+
+    async with Lock(redis_client, f'{cache_key}:lock', timeout=10*60, blocking_timeout=11*60):
+        if video_raw := await redis_client.get(cache_key):
+            video = SocialVideoData.model_validate_json(video_raw)
+            log.info("cache hit for %s", cache_key)
+            try:
+                await video.reply_to(message)
+            except TelegramBadRequest:
+                log.info("cached file ids invalid, clearing cache for %s", cache_key)
+                await redis_client.delete(cache_key)
+            else:
+                await on_social_video_sent.send(link, message, video=video, fresh=False)
+                return
+
+        log.info("cache miss for %s", cache_key)
+        action_task = await send_chat_action_periodically(message.bot, message.chat.id, ChatAction.UPLOAD_VIDEO)
+        try:
+            video = SocialVideoData.model_validate(dict(link=link, origin="tiktok"))
+            video = await handle_social_video(message, video)
+        except SocialDownloadError as e:
+            log.error("unrecoverable TikTok download error for %s: %r", link, e)
+            await message.reply("Sorry, could not download this TikTok video.")
+            return
+        except Exception as e:
+            log.error("unexpected error for TikTok %s: %r", link, e)
+            await message.reply("Sorry, something went wrong while downloading this video.")
+            return
+        finally:
+            action_task.cancel()
+            try:
+                await action_task
+            except asyncio.CancelledError:
+                pass
+
+        await redis_client.set(cache_key, video.model_dump_json())
+        log.info("cached social video %s", cache_key)
+        await video.reply_to(message)
+        await on_social_video_sent.send(link, message, video=video, fresh=True)
 
 
 @router.message(F.text.startswith("https://www.instagram.com/"))
@@ -169,23 +293,46 @@ async def embed_instagram(message: types.Message):
         return
 
     await on_link_received.send(message, LinkOrigin.INSTAGRAM)
-    link = message.text
-    success = False
-    for domain in ['kkinstagram', 'ddinstagram', 'instagramez', 'vxinstagram']:
-        new_link = link.replace(f"www.instagram", f"www.{domain}")
-        try:
-            async with session.get(new_link) as rs:
-                rs.raise_for_status()
-            success = True
-            log.info("chosen: %s", new_link)
-            break
-        except Exception as e:
-            # if the service is not working, do not send anything
-            log.warning(e)
+    link = message.text.split()[0]
+    cache_key = _social_cache_key("instagram", link)
 
-    if success:
-        await message.reply(new_link)
-        await on_link_sent.send(new_link, message, origin=LinkOrigin.INSTAGRAM)
+    async with Lock(redis_client, f'{cache_key}:lock', timeout=10*60, blocking_timeout=11*60):
+        if video_raw := await redis_client.get(cache_key):
+            video = SocialVideoData.model_validate_json(video_raw)
+            log.info("cache hit for %s", cache_key)
+            try:
+                await video.reply_to(message)
+            except TelegramBadRequest:
+                log.info("cached file ids invalid, clearing cache for %s", cache_key)
+                await redis_client.delete(cache_key)
+            else:
+                await on_social_video_sent.send(link, message, video=video, fresh=False)
+                return
+
+        log.info("cache miss for %s", cache_key)
+        action_task = await send_chat_action_periodically(message.bot, message.chat.id, ChatAction.UPLOAD_VIDEO)
+        try:
+            video = SocialVideoData.model_validate(dict(link=link, origin="instagram"))
+            video = await handle_social_video(message, video)
+        except SocialDownloadError as e:
+            log.error("unrecoverable Instagram download error for %s: %r", link, e)
+            await message.reply("Sorry, could not download this Instagram video.")
+            return
+        except Exception as e:
+            log.error("unexpected error for Instagram %s: %r", link, e)
+            await message.reply("Sorry, something went wrong while downloading this video.")
+            return
+        finally:
+            action_task.cancel()
+            try:
+                await action_task
+            except asyncio.CancelledError:
+                pass
+
+        await redis_client.set(cache_key, video.model_dump_json())
+        log.info("cached social video %s", cache_key)
+        await video.reply_to(message)
+        await on_social_video_sent.send(link, message, video=video, fresh=True)
 
 
 @router.message(F.text.startswith("https://x.com/"))

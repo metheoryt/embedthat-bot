@@ -1,24 +1,17 @@
 from aiogram import types
 
 from bot.config import settings
-from bot.enum import LinkOrigin
-from bot.events.signals import signal_handler, on_link_sent, on_yt_video_sent
+from bot.events.signals import signal_handler, on_yt_video_sent, on_social_video_sent
+from bot.util.social.schema import SocialVideoData
 from bot.util.youtube.schema import YouTubeVideoData
 
 
-@signal_handler(on_link_sent)
-async def share_link(link: str, message: types.Message, origin: LinkOrigin):
-    """Share a TikTok or instagram reel."""
-    if not settings.feed_channel_id or message.chat.type == "private":
+@signal_handler(on_social_video_sent)
+async def share_social_video(link: str, message: types.Message, video: SocialVideoData, fresh: bool):
+    """Share fresh TikTok/Instagram downloads to the feed channel."""
+    if not settings.feed_channel_id or message.chat.type == "private" or not fresh:
         return
-
-    if any(
-        [
-            origin == LinkOrigin.TIKTOK,
-            origin == LinkOrigin.INSTAGRAM and "/reel/" in link,
-        ]
-    ):
-        await message.bot.send_message(settings.feed_channel_id, link)
+    await video.send_to_chat(message.bot, settings.feed_channel_id)
 
 
 @signal_handler(on_yt_video_sent)

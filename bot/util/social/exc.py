@@ -1,0 +1,2 @@
+class SocialDownloadError(Exception):
+    pass
