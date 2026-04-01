@@ -289,7 +289,7 @@ async def embed_youtube_videos(message: types.Message):
 async def _process_social_url(message: Message, url: str) -> None:
     cache_key = _social_cache_key(url)
 
-    async with Lock(redis_client, f'{cache_key}:lock', timeout=10*60, blocking_timeout=11*60):
+    async with Lock(redis_client, f'{cache_key}:lock', timeout=20*60, blocking_timeout=21*60):
         if video_raw := await redis_client.get(cache_key):
             video = SocialVideoData.model_validate_json(video_raw)
             log.info("cache hit for %s", cache_key)

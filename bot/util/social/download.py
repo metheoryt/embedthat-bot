@@ -20,6 +20,15 @@ def _probe_dimensions(file_path: Path) -> tuple[int, int]:
         return 0, 0
 
 
+def _probe_duration(file_path: Path) -> int:
+    try:
+        probe = ffmpeg.probe(str(file_path))
+        return int(float(probe["format"].get("duration", 0)))
+    except Exception as e:
+        log.warning("ffprobe duration failed for %s: %s", file_path, e)
+        return 0
+
+
 @dataclass
 class DownloadResult:
     file_path: Path
@@ -79,7 +88,7 @@ def download_social_video(url: str, output_dir: Path) -> DownloadResult:
         width=width,
         height=height,
         title=info.get("title") or "",
-        duration=int(info.get("duration") or 0),
+        duration=int(info.get("duration") or 0) or _probe_duration(file_path),
         extractor=info.get("extractor_key") or "unknown",
     )
     log.info("downloaded %s", dr)

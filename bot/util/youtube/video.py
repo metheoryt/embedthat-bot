@@ -151,7 +151,12 @@ def pick_stream(video: YouTubeVideoData, output_path: Path, min_res: int) -> tup
 
 
 def split_video(duration_seconds: int, input_path: Path, output_dir: Path, n_parts: int) -> list[Path]:
+    if not duration_seconds:
+        raise ValueError(f"Cannot split {input_path.name}: duration is 0")
     segment_time = math.ceil(duration_seconds / n_parts)
+    if not segment_time:
+        raise ValueError(f"Cannot split {input_path.name}: segment time is 0")
+
     log.info('video of %d duration will be split by %d parts of %d seconds', duration_seconds, n_parts, segment_time)
     output_pattern = output_dir / (input_path.stem + "_part_%03d.mp4")
 
@@ -171,6 +176,8 @@ def split_video(duration_seconds: int, input_path: Path, output_dir: Path, n_par
     )
 
     parts = sorted(output_dir.glob(input_path.stem + "_part_*.mp4"))
+    if len(parts) != n_parts:
+        raise ValueError(f"Splitting {input_path.name} into {n_parts} parts: got {len(parts)} parts")
     return parts
 
 
