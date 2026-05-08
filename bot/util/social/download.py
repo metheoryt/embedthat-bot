@@ -75,7 +75,12 @@ def download_social_video(url: str, output_dir: Path) -> DownloadResult:
     video_id = info["id"]
     file_path = output_dir / f"{video_id}.mp4"
     if not file_path.exists():
-        raise SocialDownloadError(f"Downloaded file not found: {file_path}")
+        # Carousel items (e.g. Instagram img_index) get a per-item ID different
+        # from the parent post ID, so the expected filename won't match.
+        mp4_files = list(output_dir.glob("*.mp4"))
+        if not mp4_files:
+            raise SocialDownloadError(f"Downloaded file not found: {file_path}")
+        file_path = mp4_files[0]
 
     width = info.get("width") or 0
     height = info.get("height") or 0
