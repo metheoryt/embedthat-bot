@@ -53,10 +53,10 @@ class YouTubeVideoData(BaseModel):
                 media=file_id,
                 width=self.width,
                 height=self.height,
+                caption=self.caption if i == 0 else None,
             )
-            for file_id in self.file_ids
+            for i, file_id in enumerate(self.file_ids)
         ]
-        the_group[0].caption = self.caption
         return the_group
 
     @property

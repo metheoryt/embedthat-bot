@@ -22,10 +22,14 @@ class SocialVideoData(BaseModel):
     async def reply_to(self, message: types.Message) -> None:
         if len(self.file_ids) > 1:
             group = [
-                types.InputMediaVideo(media=fid, width=self.width, height=self.height)
-                for fid in self.file_ids
+                types.InputMediaVideo(
+                    media=fid,
+                    width=self.width,
+                    height=self.height,
+                    caption=self.caption if i == 0 else None,
+                )
+                for i, fid in enumerate(self.file_ids)
             ]
-            group[0].caption = self.caption
             await message.reply_media_group(group)
         else:
             await message.reply_video(
@@ -38,10 +42,14 @@ class SocialVideoData(BaseModel):
     async def send_to_chat(self, bot: Bot, chat_id: int) -> None:
         if len(self.file_ids) > 1:
             group = [
-                types.InputMediaVideo(media=fid, width=self.width, height=self.height)
-                for fid in self.file_ids
+                types.InputMediaVideo(
+                    media=fid,
+                    width=self.width,
+                    height=self.height,
+                    caption=self.caption if i == 0 else None,
+                )
+                for i, fid in enumerate(self.file_ids)
             ]
-            group[0].caption = self.caption
             await bot.send_media_group(chat_id, group)
         else:
             await bot.send_video(
