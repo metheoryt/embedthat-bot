@@ -22,6 +22,7 @@ from .events import (
     on_link_received,
 )
 from .util.chat_action import send_chat_action_periodically
+from .util.redis_lock import HeartbeatLock
 from .util.stats import build_stats_report
 from .util.redis import redis_client
 from .util.social import SocialVideoData, SocialDownloadError, download_social_video
@@ -251,7 +252,8 @@ async def embed_youtube_videos(message: types.Message):
 
     video = YouTubeVideoData.model_validate(dict(link=link, target_lang=target_lang))
 
-    async with Lock(redis_client, f'{video.cache_key}:lock', timeout=10*60, blocking_timeout=11*60):
+    lock = Lock(redis_client, f'{video.cache_key}:lock', timeout=10*60, blocking_timeout=11*60)
+    async with HeartbeatLock(lock):
         if video_raw := await redis_client.get(video.cache_key):
             video = YouTubeVideoData.model_validate_json(video_raw)
             log.info("cache hit for %s", video.cache_key)
@@ -289,7 +291,8 @@ async def embed_youtube_videos(message: types.Message):
 async def _process_social_url(message: Message, url: str) -> None:
     cache_key = _social_cache_key(url)
 
-    async with Lock(redis_client, f'{cache_key}:lock', timeout=20*60, blocking_timeout=21*60):
+    lock = Lock(redis_client, f'{cache_key}:lock', timeout=20*60, blocking_timeout=21*60)
+    async with HeartbeatLock(lock):
         if video_raw := await redis_client.get(cache_key):
             video = SocialVideoData.model_validate_json(video_raw)
             log.info("cache hit for %s", cache_key)
