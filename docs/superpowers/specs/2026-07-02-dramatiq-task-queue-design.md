@@ -34,8 +34,8 @@ scaling, but the option should exist).
 
 ## Decision
 
-Introduce **Dramatiq** with the **existing Redis instance as broker**, plus
-**`dramatiq-dashboard`** for observability. Rejected alternatives:
+Introduce **Dramatiq** with the **existing Redis instance as broker**.
+Rejected alternatives:
 
 - **Celery + Redis + Flower** — more mature tooling and a richer dashboard,
   but a heavier config surface for this project's size. Has the identical
@@ -44,6 +44,25 @@ Introduce **Dramatiq** with the **existing Redis instance as broker**, plus
   handle anyway.
 - **No queue, just DRY up retry loops** — cheapest option, but doesn't touch
   durability, scaling, or decoupling, all of which were explicitly wanted.
+
+**Observability — amended after spec approval.** The original decision here
+was `dramatiq-dashboard`, but dependency verification during plan-writing
+found its latest release (0.4.0, PyPI) hard-pins `dramatiq[redis]<2.0` and
+`redis<5.0` — incompatible with the `dramatiq==2.2.0` this design already
+verified its `TimeLimit`/`Retries` findings against, and with this project's
+existing `redis[hiredis]>=5.2.1`. The package's last release predates
+dramatiq 2.x, indicating it's unmaintained. Installing it alongside dramatiq
+2.x breaks `uv sync` outright.
+
+Options considered: downgrade dramatiq and redis-py to satisfy it (rejected —
+downgrades a core dependency `HeartbeatLock` relies on, for a dashboard, and
+pins the project to an abandoned dramatiq major); install an unofficial
+GitHub fork (rejected — unpublished, unpinned, unvetted dependency in a bot
+that holds a Telegram token). **Decision: drop the web dashboard.**
+Observability instead extends the existing `/stats` admin command pattern
+(`bot/handlers.py:cmd_stats`, `bot/util/stats.py`) with a queue-depth /
+failed-count report read directly from the broker's Redis keys — no new
+dependency, no new attack surface.
 
 ## Architecture
 
@@ -59,11 +78,9 @@ backing store) and gains a third: Dramatiq's message broker. Dramatiq's
 Redis broker uses its own key namespace (`dramatiq:*` by default), so no
 collision with the app's `dl:...` / `...:lock` keys.
 
-A third lightweight service runs `dramatiq-dashboard`, pointed at the same
-Redis, for queue depth / worker / failure visibility. `dramatiq-dashboard`
-has no built-in authentication, so it must **not** be exposed on a public
-port — bind it to localhost and access it via an SSH tunnel, or put it
-behind the VPS's existing reverse proxy with auth if one exists.
+Queue observability is folded into the existing `/stats` admin command
+(`bot/handlers.py:cmd_stats`) rather than a separate dashboard service — see
+"Observability" under Decision above.
 
 ## Components
 
@@ -222,8 +239,8 @@ done, using the local Redis instance:
    confirm the override prevents the force-kill that the 10-minute default
    would otherwise cause, then revert. Directly re-validates the finding in
    Error Handling.
-6. Dashboard sanity check: confirm `dramatiq-dashboard` shows queue depth
-   and reflects the success/failure states from the above.
+6. `/stats` admin command sanity check: confirm the queue-depth / failed-count
+   report reflects the success/failure states exercised by the above steps.
 
 ## Out of scope
 
