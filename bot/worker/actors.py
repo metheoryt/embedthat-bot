@@ -1,10 +1,13 @@
 import asyncio
 import logging
+import tempfile
+from pathlib import Path
 
 import dramatiq
 import redis.asyncio as redis
-from aiogram import Bot
-from aiogram.exceptions import TelegramBadRequest
+from aiogram import Bot, types
+from aiogram.enums import ChatAction
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
 from redis.asyncio.lock import Lock
 
 from bot.config import settings
@@ -15,6 +18,7 @@ from bot.util.social.schema import SocialVideoData
 from bot.util.youtube.enum import TargetLang
 from bot.util.youtube.exc import YouTubeError
 from bot.util.youtube.schema import YouTubeVideoData
+from bot.util.youtube.video import get_audio_stream
 from bot.worker.broker import broker  # noqa: F401 -- registers the Redis broker before actors are declared
 from bot.worker.chat_action import with_chat_action
 from bot.worker.error_reporting import report_actor_failure  # noqa: F401 -- registers the actor with the broker
@@ -47,6 +51,17 @@ async def _notify_waiters_success(bot: Bot, waiters: list[Waiter], video) -> Non
 async def _notify_waiters_failure(bot: Bot, waiters: list[Waiter], text: str) -> None:
     for waiter in waiters:
         await _safe_edit_ack(bot, waiter.chat_id, waiter.ack_message_id, text)
+
+
+async def _notify_audio_waiters_success(bot: Bot, waiters: list[Waiter], video: YouTubeVideoData) -> None:
+    for waiter in waiters:
+        await bot.send_audio(
+            waiter.chat_id,
+            video.audio_file_id,
+            performer=video.yt.author,
+            title=video.yt.title,
+            duration=video.yt.length,
+        )
 
 
 @with_chat_action()
@@ -88,6 +103,75 @@ def process_youtube_link(chat_id: int, link: str, target_lang: str):
     bot = Bot(token=settings.bot_token)
     try:
         asyncio.run(_process_youtube_link_async(bot, chat_id, link, target_lang))
+    finally:
+        asyncio.run(bot.session.close())
+
+
+@with_chat_action(ChatAction.UPLOAD_VOICE)
+async def _process_youtube_audio_async(bot: Bot, chat_id: int, video_id: str, reply_to_message_id: int) -> None:
+    redis_client = redis.from_url(str(settings.redis_dsn), decode_responses=True)
+    try:
+        cache_key = f"yt:{video_id}"
+        audio_waiters_key = f"{cache_key}:audio"
+
+        video_raw = await redis_client.get(cache_key)
+        if not video_raw:
+            log.error("cache entry %s vanished before audio extraction could run", cache_key)
+            waiters = await pop_waiters(redis_client, audio_waiters_key)
+            await _notify_waiters_failure(bot, waiters, "❌ This video is no longer cached, please resend the link.")
+            return
+
+        video = YouTubeVideoData.model_validate_json(video_raw)
+
+        lock = Lock(redis_client, f'{audio_waiters_key}:lock', timeout=10 * 60, blocking_timeout=11 * 60)
+        async with HeartbeatLock(lock):
+            if not video.audio_file_id:
+                with tempfile.TemporaryDirectory() as tmp:
+                    try:
+                        audio_path = await asyncio.to_thread(get_audio_stream, video, Path(tmp))
+                    except YouTubeError as e:
+                        waiters = await pop_waiters(redis_client, audio_waiters_key)
+                        await _notify_waiters_failure(bot, waiters, f"❌ Couldn't extract audio: {e}")
+                        raise
+
+                    for i in range(3):
+                        try:
+                            media_message = await bot.send_audio(
+                                settings.dump_chat_id,
+                                types.FSInputFile(audio_path),
+                                performer=video.yt.author,
+                                title=video.yt.title,
+                                duration=video.yt.length,
+                            )
+                            break
+                        except TelegramNetworkError:
+                            if i == 2:
+                                raise
+                            log.warning('failed to send an audio file, retrying in 2 seconds')
+                            await asyncio.sleep(2)
+
+                video.audio_file_id = media_message.audio.file_id
+                await redis_client.set(cache_key, video.model_dump_json())
+                log.info("cached audio for %s", cache_key)
+
+            waiters = await pop_waiters(redis_client, audio_waiters_key)
+            await _notify_audio_waiters_success(bot, waiters, video)
+    finally:
+        await redis_client.aclose()
+
+
+@dramatiq.actor(
+    max_retries=2,
+    min_backoff=30_000,
+    max_backoff=5 * 60_000,
+    time_limit=20 * 60_000,
+    throws=(YouTubeError,),
+    on_retry_exhausted="report_actor_failure",
+)
+def process_youtube_audio(chat_id: int, video_id: str, reply_to_message_id: int):
+    bot = Bot(token=settings.bot_token)
+    try:
+        asyncio.run(_process_youtube_audio_async(bot, chat_id, video_id, reply_to_message_id))
     finally:
         asyncio.run(bot.session.close())
 

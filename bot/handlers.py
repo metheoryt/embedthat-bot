@@ -15,7 +15,7 @@ from .util.redis import redis_client
 from .util.social.schema import SocialVideoData
 from .util.youtube.enum import TargetLang
 from .util.youtube.schema import YouTubeVideoData
-from .worker.actors import process_social_link, process_youtube_link
+from .worker.actors import process_social_link, process_youtube_audio, process_youtube_link
 from .worker.waiters import Waiter, register_waiter
 
 log = logging.getLogger(__name__)
@@ -57,12 +57,15 @@ async def embed_youtube_videos(message: types.Message):
     await on_link_received.send(message, LinkOrigin.YOUTUBE)
     link = message.text.split()[0]  # as regex states, we expect the first element in the text to be a link
 
-    log.info('user lang: %s', message.from_user.language_code)
-    try:
-        target_lang = TargetLang(message.from_user.language_code)
-    except ValueError:
+    if settings.enable_audio_translation:
+        log.info('user lang: %s', message.from_user.language_code)
+        try:
+            target_lang = TargetLang(message.from_user.language_code)
+        except ValueError:
+            target_lang = TargetLang.ORIGINAL
+            log.info('no translation will be performed')
+    else:
         target_lang = TargetLang.ORIGINAL
-        log.info('no translation will be performed')
 
     video = YouTubeVideoData.model_validate(dict(link=link, target_lang=target_lang))
 
@@ -89,6 +92,42 @@ async def embed_youtube_videos(message: types.Message):
     is_first = await register_waiter(redis_client, video.cache_key, waiter, _YOUTUBE_WAITERS_TTL)
     if is_first:
         process_youtube_link.send(message.chat.id, link, target_lang.value)
+
+
+@router.callback_query(F.data.startswith("aud:"))
+async def get_audio(callback: types.CallbackQuery):
+    await callback.answer()
+    if not isinstance(callback.message, types.Message):
+        return
+
+    video_id = callback.data.removeprefix("aud:")
+    cache_key = f"yt:{video_id}"
+
+    video_raw = await redis_client.get(cache_key)
+    if not video_raw:
+        await callback.message.reply("❌ This video is no longer cached, please resend the link.")
+        return
+
+    video = YouTubeVideoData.model_validate_json(video_raw)
+    if video.audio_file_id:
+        await callback.message.answer_audio(
+            video.audio_file_id,
+            performer=video.yt.author,
+            title=video.yt.title,
+            duration=video.yt.length,
+        )
+        return
+
+    log.info("cache miss for audio %s, registering waiter", cache_key)
+    waiter = Waiter(
+        chat_id=callback.message.chat.id,
+        chat_type=callback.message.chat.type,
+        reply_to_message_id=callback.message.message_id,
+        ack_message_id=callback.message.message_id,
+    )
+    is_first = await register_waiter(redis_client, f"{cache_key}:audio", waiter, _YOUTUBE_WAITERS_TTL)
+    if is_first:
+        process_youtube_audio.send(callback.message.chat.id, video_id, callback.message.message_id)
 
 
 async def _process_social_url(message: Message, url: str) -> None:

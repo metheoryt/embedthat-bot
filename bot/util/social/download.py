@@ -5,6 +5,8 @@ from pathlib import Path
 import ffmpeg
 import yt_dlp
 
+from bot.config import settings
+
 from .exc import SocialDownloadError
 
 log = logging.getLogger(__name__)
@@ -40,7 +42,7 @@ class DownloadResult:
     extractor: str  # yt-dlp extractor key, e.g. "TikTok", "Instagram", "Twitter"
 
 
-def download_social_video(url: str, output_dir: Path) -> DownloadResult:
+def download_social_video(url: str, output_dir: Path, max_res: int = settings.max_video_resolution) -> DownloadResult:
     """
     Synchronous yt-dlp download. Call via asyncio.to_thread in the handler.
 
@@ -48,7 +50,10 @@ def download_social_video(url: str, output_dir: Path) -> DownloadResult:
     """
     ydl_opts = {
         "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": (
+            f"worstvideo[ext=mp4][height>={max_res}]+bestaudio[ext=m4a]/"
+            f"worst[ext=mp4][height>={max_res}]/best[ext=mp4]/best"
+        ),
         "merge_output_format": "mp4",
         "quiet": True,
         "noplaylist": True,
@@ -56,11 +61,13 @@ def download_social_video(url: str, output_dir: Path) -> DownloadResult:
         # - yuv420p: iOS requires 8-bit 4:2:0 chroma
         # - faststart: moves moov atom to front so iOS can start playback immediately
         # - profile main: avoids B-frame issues on some decoders
+        # - scale: this merger step is already a mandatory re-encode, so capping height here is free
         "postprocessor_args": {
             "merger": [
                 "-vcodec", "libx264",
                 "-profile:v", "main",
                 "-pix_fmt", "yuv420p",
+                "-vf", f"scale=-2:'min({max_res},ih)'",
                 "-acodec", "aac",
                 "-movflags", "+faststart",
             ],

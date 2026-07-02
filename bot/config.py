@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     feed_channel_id: int | None = None
     admin_chat_id: int | None = None
 
+    enable_audio_translation: bool = False
+    max_video_resolution: int = 480
+
     # populated on setup
     bot_username: str | None = None
     tz: str | None = None

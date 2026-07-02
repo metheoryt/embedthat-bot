@@ -6,6 +6,8 @@ from pathlib import Path
 import ffmpeg
 from pytubefix import Stream
 
+from bot.config import settings
+
 from .enum import TargetLang
 from .exc import YouTubeError
 from .schema import YouTubeVideoData
@@ -50,7 +52,7 @@ def get_audio_stream(video: YouTubeVideoData, output_path: Path):
     log.info('downloading audio stream')
     audio_stream_path = audio_stream.download(output_path=str(output_path), filename=f'{video.yt.video_id}.audio.mp4')
 
-    if video.target_lang != TargetLang.ORIGINAL:
+    if settings.enable_audio_translation and video.target_lang != TargetLang.ORIGINAL:
         log.info('trying to translate audio stream to %s', video.target_lang)
         translated_audio_path = maybe_translate_audio(video, str(output_path), audio_stream_path)
         if translated_audio_path:
@@ -60,7 +62,9 @@ def get_audio_stream(video: YouTubeVideoData, output_path: Path):
     return audio_stream_path
 
 
-def pick_stream(video: YouTubeVideoData, output_path: Path, min_res: int) -> tuple[Stream, int, Path]:
+def pick_stream(
+    video: YouTubeVideoData, output_path: Path, min_res: int, max_res: int = settings.max_video_resolution
+) -> tuple[Stream, int, Path]:
     # select a stream that can be split into as few parts as possible
     # We always want the highest audio quality
     audio_stream_path = get_audio_stream(video, output_path)
@@ -84,10 +88,20 @@ def pick_stream(video: YouTubeVideoData, output_path: Path, min_res: int) -> tup
             log.info('duplicate res %dx%d stream: %s', width, height, stream)
         real_res_to_stream[key] = stream
 
-    # sort by total pixels desc
-    video_streams = [
-        s[1] for s in sorted(real_res_to_stream.items(), key=lambda s: s[0][0] * s[0][1], reverse=True)
-    ]
+    stream_heights = {stream: height for (_, height), stream in real_res_to_stream.items()}
+
+    # tier 1: streams at or above the cap, closest fit first (smallest first — minimizes re-encode work)
+    tier1 = sorted(
+        (s for s in stream_heights if stream_heights[s] >= max_res),
+        key=lambda s: stream_heights[s],
+    )
+    # tier 2 (fallback, only used if tier 1 is empty): source tops out below the cap, take the best available
+    tier2 = sorted(
+        (s for s in stream_heights if stream_heights[s] < max_res),
+        key=lambda s: stream_heights[s],
+        reverse=True,
+    )
+    video_streams = tier1 or tier2
     log.info('supported adaptive video streams: %s', video_streams)
 
     for n_parts in range(1, 11):  # 10 max (what an album can fit)
@@ -121,6 +135,11 @@ def pick_stream(video: YouTubeVideoData, output_path: Path, min_res: int) -> tup
             merged_stream_path = output_path / merged_stream_filename
             if not merged_stream_path.exists():
                 log.info('merging %s and %s', video_stream_path, audio_stream_path)
+                real_height = stream_heights[stream]
+                if real_height <= max_res:
+                    video_codec_args = ['-c:v', 'copy']  # Copy video codec without re-encoding
+                else:
+                    video_codec_args = ['-vf', f'scale=-2:{max_res}', '-c:v', 'libx264']
                 command = [
                     'ffmpeg',
                     '-y',  # Overwrite an output file if exists
@@ -128,7 +147,7 @@ def pick_stream(video: YouTubeVideoData, output_path: Path, min_res: int) -> tup
                     '-i', audio_stream_path,
                     '-map', '0:v:0',  # Take video from the first input
                     '-map', '1:a:0',  # Take audio from the second input
-                    '-c:v', 'copy',   # Copy video codec without re-encoding
+                    *video_codec_args,
                     '-c:a', 'aac',    # Ensure audio is in the proper format
                     # '-b:a', '192k',  # Optional: control audio quality
                     '-movflags', '+faststart',
@@ -181,10 +200,15 @@ def split_video(duration_seconds: int, input_path: Path, output_dir: Path, n_par
     return parts
 
 
-def check_download_adaptive(video: YouTubeVideoData, output_path: str, min_res: int = 360) -> tuple[Stream, list[Path]]:
+def check_download_adaptive(
+    video: YouTubeVideoData,
+    output_path: str,
+    min_res: int = 360,
+    max_res: int = settings.max_video_resolution,
+) -> tuple[Stream, list[Path]]:
     output_path = Path(output_path)
     # pick one that fits best
-    video_stream, n_parts, video_path = pick_stream(video, output_path, min_res)
+    video_stream, n_parts, video_path = pick_stream(video, output_path, min_res, max_res)
 
     video_paths = []
     while True:
