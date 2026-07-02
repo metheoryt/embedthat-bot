@@ -281,12 +281,27 @@ wheels = [
 ]
 
 [[package]]
+name = "dramatiq"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/fb/78b1b689c4a121fc762ab6f00674cfa7246980678117edb03cbb168e5f9f/dramatiq-2.2.0.tar.gz", hash = "sha256:70c9278b0a9b880aeb23b8e09c9d43b1421ac8e807ef18903f6dd059130474a1", size = 108462, upload-time = "2026-06-17T11:18:34.629Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ef/57/a9be0b205b24e794c833a5295497f914776eb4d606d5a25a5b290e8b75ec/dramatiq-2.2.0-py3-none-any.whl", hash = "sha256:2b2aa244b4098e154600c47cdb2c04cec6c3af44e9e159c319c6fc8b6f0ba90e", size = 127342, upload-time = "2026-06-17T11:18:33.433Z" },
+]
+
+[package.optional-dependencies]
+redis = [
+    { name = "redis" },
+]
+
+[[package]]
 name = "embedthat-bot"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aiogram" },
     { name = "aiosignal" },
+    { name = "dramatiq", extra = ["redis"] },
     { name = "faster-whisper" },
     { name = "ffmpeg-python" },
     { name = "pydantic-settings" },
@@ -301,6 +316,7 @@ dependencies = [
 requires-dist = [
     { name = "aiogram", specifier = ">=3.17.0" },
     { name = "aiosignal", specifier = ">=1.3.2" },
+    { name = "dramatiq", extras = ["redis"], specifier = ">=2.2.0,<3.0.0" },
     { name = "faster-whisper", specifier = ">=1.2.0" },
     { name = "ffmpeg-python", specifier = ">=0.2.0" },
     { name = "pydantic-settings", specifier = ">=2.7.1" },
