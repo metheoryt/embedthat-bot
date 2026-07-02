@@ -84,12 +84,12 @@ Queue observability is folded into the existing `/stats` admin command
 
 ## Components
 
-**Actors** (new module, e.g. `bot/worker/actors.py`) replace the inline
+**Actors** (new module, `bot/worker/actors.py`) replace the inline
 heavy-lifting currently called from `embed_youtube_videos` /
 `_process_social_url`:
 
-- `process_youtube_link(chat_id: int, message_id: int, link: str, target_lang: str)`
-- `process_social_link(chat_id: int, message_id: int, url: str)`
+- `process_youtube_link(chat_id, chat_type, reply_to_message_id, ack_message_id, link, target_lang)`
+- `process_social_link(chat_id, chat_type, reply_to_message_id, ack_message_id, url)`
 
 Only primitives are passed in — not the aiogram `Message` object, which
 isn't meaningfully reconstructable across a process boundary. Each actor
@@ -103,8 +103,9 @@ async implementation with `asyncio.run(...)`:
 
 ```python
 @with_chat_action()
-async def _process_youtube_link_async(bot: Bot, chat_id: int, message_id: int, link: str, target_lang: str):
-    ...  # today's handle_youtube_video body, using HeartbeatLock as now
+async def _process_youtube_link_async(bot: Bot, chat_id: int, chat_type: str, reply_to_message_id: int, ack_message_id: int, link: str, target_lang: str):
+    ...  # today's handle_youtube_video body, using HeartbeatLock as now,
+    ...  # plus waiters-list fan-out on completion — see Data flow below
 
 @dramatiq.actor(
     max_retries=2,
@@ -113,10 +114,10 @@ async def _process_youtube_link_async(bot: Bot, chat_id: int, message_id: int, l
     time_limit=45 * 60_000,
     throws=(YouTubeError,),
 )
-def process_youtube_link(chat_id: int, message_id: int, link: str, target_lang: str):
+def process_youtube_link(chat_id, chat_type, reply_to_message_id, ack_message_id, link, target_lang):
     bot = Bot(token=settings.bot_token)
     try:
-        asyncio.run(_process_youtube_link_async(bot, chat_id, message_id, link, target_lang))
+        asyncio.run(_process_youtube_link_async(bot, chat_id, chat_type, reply_to_message_id, ack_message_id, link, target_lang))
     finally:
         asyncio.run(bot.session.close())
 ```
@@ -124,9 +125,12 @@ def process_youtube_link(chat_id: int, message_id: int, link: str, target_lang: 
 `process_social_link` mirrors this with `throws=(SocialDownloadError,)` and
 a shorter `time_limit` (~25 min).
 
-**`HeartbeatLock` is reused unchanged** — same dedup lock built for the
-prior fix, just invoked from inside the actor instead of the aiogram
-handler.
+**`HeartbeatLock` is reused unchanged for the actual processing** — same
+dedup lock built for the prior fix, guarding the download/translate/merge
+pipeline exactly as it does today, just invoked from inside the actor
+instead of the aiogram handler. Coordinating *concurrent duplicate
+requests* is a separate concern, handled by the waiters list below — see
+"Deduplication across the handler/worker split" under Data flow.
 
 **Chat-action wrapper.** A small decorator (`with_chat_action`, e.g. in
 `bot/worker/chat_action.py`) reuses the existing
@@ -167,18 +171,57 @@ free and takes `chat_id` as an explicit parameter.
 **Cache hit (common case) — unchanged.** The aiogram handler does the Redis
 `GET` inline and replies immediately if there's a hit. No queue involvement.
 
+### Deduplication across the handler/worker split
+
+The cache key (`yt:{video_id}:{lang}` / `dl:{link_hash}`) is **global**, not
+per-chat — the same link can legitimately be posted to several different
+chats at once, and today's single blocking `Lock` makes every one of them
+wait, then serves all of them from cache once the first finishes. Moving
+the heavy work into a fire-and-forget `actor.send()` removes the natural
+place that used to make later requests wait — so a fast, cross-process
+mechanism is needed to (a) avoid double-processing the same link and (b)
+still deliver the result to every chat that asked for it, not just the
+first.
+
+**Design: a per-cache-key "waiters" list in Redis**, keyed
+`{cache_key}:waiters`, holding one JSON entry per pending request:
+`{chat_id, chat_type, reply_to_message_id, ack_message_id}`.
+
 **Cache miss:**
 
-1. Handler calls `process_youtube_link.send(chat_id, message_id, link, target_lang)`
-   (or the social equivalent) — a fast Redis write, returns instantly.
-2. Handler immediately replies with a lightweight "processing…"
-   acknowledgment (edited in place once the real result arrives, to avoid
-   chat clutter when multiple links are pasted in a group).
-3. A worker (any of N replicas) picks up the job, acquires `HeartbeatLock`
-   for the cache key, runs the pipeline, and on success sends the result via
-   its own `Bot`, writes the cache entry, and fires `on_yt_video_sent` — all
-   from the worker.
-4. On failure, see Error Handling.
+1. Handler computes `video.cache_key`, sends a "processing…" ack
+   (`message.reply(...)`), and does `RPUSH {cache_key}:waiters <entry>`
+   followed by `EXPIRE {cache_key}:waiters <ttl>` (TTL generous relative to
+   the actor's worst-case retry budget — ~3h for YouTube, ~1.5h for social).
+   `RPUSH` is atomic and returns the list's new length.
+2. **Only if the returned length is 1** (this handler was first) does it
+   also call `process_youtube_link.send(...)` / `process_social_link.send(...)`.
+   Every other concurrent requester for the same key — same chat or a
+   different one — still registers a waiter and gets a normal "processing…"
+   ack, but does not enqueue a second job.
+3. A worker picks up the job, acquires `HeartbeatLock` for the cache key
+   (unchanged from the prior fix), and runs the pipeline.
+4. On success: the actor writes the cache entry, then atomically reads and
+   deletes `{cache_key}:waiters` (`LRANGE` + `DELETE`), and for **every**
+   waiter — not just the one that triggered the job — deletes that waiter's
+   ack message and sends the result to that waiter's chat, via its own
+   `Bot`. It fires `on_yt_video_sent` once per waiter (`fresh=True`).
+5. On an unrecoverable error (`YouTubeError` / `SocialDownloadError`,
+   single attempt, no retry): same fan-out, but each waiter's ack is edited
+   to a failure message instead of deleted. See Error handling.
+6. On a transient error that dramatiq will retry: the waiters list is left
+   untouched (a later attempt, or eventual success, still needs it) and the
+   exception is simply re-raised.
+
+**Accepted gap:** if a job exhausts all of dramatiq's retries (three
+consecutive failures on the same in-flight link — rare), only the
+originally-enqueuing request is guaranteed a clear failure outcome; other
+waiters that piggybacked on the same in-flight job keep a stale
+"processing…" ack rather than an explicit failure notice. Closing this
+fully would need a companion actor wired via dramatiq's
+`on_retry_exhausted` actor option to fan out the failure on final
+exhaustion too — deliberately out of scope for this iteration (see Out of
+scope).
 
 ## Error handling
 
@@ -253,3 +296,7 @@ per user decision to finish this design first):
   build: Yandex Music and SoundCloud both have working extractors; Spotify
   has none — DRM-protected, no legitimate extraction path — and VK has only
   video extractors, no music/audio extractor).
+- The `on_retry_exhausted` companion actor that would notify *every*
+  waiting chat on full retry exhaustion, not just the originally-enqueuing
+  one (see "Accepted gap" under Data flow) — a deliberate scope cut for a
+  rare edge case, revisit if it turns out to matter in practice.
