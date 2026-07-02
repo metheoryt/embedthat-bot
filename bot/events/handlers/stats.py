@@ -39,21 +39,21 @@ async def stats_link_received(message, origin):
 
 
 @signal_handler(on_yt_video_sent)
-async def stats_yt_sent(link, message, video, fresh):
+async def stats_yt_sent(link, chat_id, chat_type, bot, video, fresh):
     await _incr(f"stats:{_today()}:success:youtube")
 
 
 @signal_handler(on_social_video_sent)
-async def stats_social_sent(link, message, video, fresh):
+async def stats_social_sent(link, chat_id, chat_type, bot, video, fresh):
     platform = (video.origin or "social").lower()
     await _incr(f"stats:{_today()}:success:{platform}")
 
 
 @signal_handler(on_yt_video_fail)
-async def stats_yt_fail(link, message):
+async def stats_yt_fail(link):
     await _incr(f"stats:{_today()}:fail:youtube")
 
 
 @signal_handler(on_social_video_fail)
-async def stats_social_fail(link, message):
+async def stats_social_fail(link):
     await _incr(f"stats:{_today()}:fail:social")

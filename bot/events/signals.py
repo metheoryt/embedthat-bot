@@ -19,16 +19,16 @@ def freeze_signals():
 
 
 on_yt_video_sent = Signal(
-    "on_yt_video_sent(link: str, message: Message, video: YouTubeVideoData, fresh: bool)"
+    "on_yt_video_sent(link: str, chat_id: int, chat_type: str, bot: Bot, video: YouTubeVideoData, fresh: bool)"
 )
 on_yt_video_fail = Signal(
-    "on_yt_video_fail(link: str, message: Message)"
+    "on_yt_video_fail(link: str)"
 )
 on_social_video_sent = Signal(
-    "on_social_video_sent(link: str, message: Message, video: SocialVideoData, fresh: bool)"
+    "on_social_video_sent(link: str, chat_id: int, chat_type: str, bot: Bot, video: SocialVideoData, fresh: bool)"
 )
 on_social_video_fail = Signal(
-    "on_social_video_fail(link: str, message: Message)"
+    "on_social_video_fail(link: str)"
 )
 on_link_sent = Signal("on_link_sent(link: str, message: Message, origin: LinkOrigin)")
 on_link_received = Signal("on_link_received(message: Message, origin: LinkOrigin)")
