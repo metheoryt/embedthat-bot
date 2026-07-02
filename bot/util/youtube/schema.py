@@ -68,11 +68,11 @@ class YouTubeVideoData(BaseModel):
             caption=self.caption,
         )
 
-    async def send_to_chat(self, bot: Bot, chat_id: int):
+    async def send_to_chat(self, bot: Bot, chat_id: int, reply_to_message_id: int | None = None):
         if len(self.file_ids) > 1:
-            await bot.send_media_group(chat_id, self.media_group)
+            await bot.send_media_group(chat_id, self.media_group, reply_to_message_id=reply_to_message_id)
         else:
-            await bot.send_video(chat_id, **self.single_video)
+            await bot.send_video(chat_id, **self.single_video, reply_to_message_id=reply_to_message_id)
 
     async def reply_to(self, message: types.Message):
         if len(self.file_ids) > 1:

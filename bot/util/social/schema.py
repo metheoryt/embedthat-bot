@@ -1,3 +1,5 @@
+import hashlib
+
 from aiogram import types, Bot
 from pydantic import BaseModel, Field
 
@@ -12,6 +14,10 @@ class SocialVideoData(BaseModel):
     width: int | None = None
     height: int | None = None
     title: str | None = None
+
+    @property
+    def cache_key(self) -> str:
+        return f"dl:{hashlib.sha256(self.link.encode()).hexdigest()[:16]}"
 
     @property
     def caption(self) -> str:
@@ -39,7 +45,7 @@ class SocialVideoData(BaseModel):
                 caption=self.caption,
             )
 
-    async def send_to_chat(self, bot: Bot, chat_id: int) -> None:
+    async def send_to_chat(self, bot: Bot, chat_id: int, reply_to_message_id: int | None = None) -> None:
         if len(self.file_ids) > 1:
             group = [
                 types.InputMediaVideo(
@@ -50,7 +56,7 @@ class SocialVideoData(BaseModel):
                 )
                 for i, fid in enumerate(self.file_ids)
             ]
-            await bot.send_media_group(chat_id, group)
+            await bot.send_media_group(chat_id, group, reply_to_message_id=reply_to_message_id)
         else:
             await bot.send_video(
                 chat_id,
@@ -58,4 +64,5 @@ class SocialVideoData(BaseModel):
                 width=self.width,
                 height=self.height,
                 caption=self.caption,
+                reply_to_message_id=reply_to_message_id,
             )
