@@ -33,6 +33,47 @@
   model in a per-process global (`_whisper_model`); multiple worker
   *processes* would each load a separate copy into memory, while threads
   within one process share it safely.
+- **Amended after Task 7 implementation:** actors must never import
+  `bot.util.redis.redis_client` directly. That module-level singleton is
+  constructed once at import time and is only safe under the aiogram
+  process's single, persistent event loop. Each `@dramatiq.actor`-decorated
+  function bridges to async code via a fresh `asyncio.run(...)` call per
+  invocation — a new event loop every time — and redis-py's async connection
+  pool does not detect or recover from being handed a connection whose
+  transport belongs to an already-closed loop. Reusing the shared singleton
+  there fails deterministically on a worker's *second* job with `RuntimeError:
+  Event loop is closed` (or, off Windows, "attached to a different loop").
+  Verified directly with a 4-line repro (`asyncio.run(ping()); asyncio.run(ping())`
+  against the shared client — the second call fails). Fix: each actor's async
+  work function constructs its own short-lived `redis.asyncio.Redis` client
+  (`redis.asyncio.from_url(str(settings.redis_dsn), decode_responses=True)`)
+  as its first statement and closes it (`await redis_client.aclose()`) in a
+  `finally` block before returning — scoped entirely to that invocation's own
+  event loop. This does not affect `bot/util/redis.py`, `bot/handlers.py`, or
+  `bot/util/stats.py` (Task 9) — all of those run inside the aiogram process's
+  one persistent event loop, where the shared singleton remains correct and
+  is not changed by this amendment.
+- **Amended after Task 7 verification:** the same event-loop hazard also
+  hits `bot/events/handlers/stats.py`'s signal receivers for
+  `on_yt_video_sent`, `on_social_video_sent`, `on_yt_video_fail`, and
+  `on_social_video_fail` — these are fired both from the aiogram process
+  (cache-hit path, `fresh=False`) and from Task 7's worker actors
+  (cache-miss fan-out, `fresh=True`), so they inherit the worker's
+  per-job `asyncio.run()` loop churn. Reproduced directly: a two-job
+  sequential run against a real `Worker` failed on job 2 with the same
+  `RuntimeError: ... attached to a different loop`, raised from inside
+  `stats_yt_sent`'s call to the shared `redis_client` singleton — not
+  from `actors.py` itself, which was already fixed. Fix: those four
+  handlers each open their own short-lived `redis.asyncio.Redis` client
+  (same `from_url(...)` / `aclose()` pattern as the prior amendment) instead
+  of importing the shared singleton; `_incr`/`_sadd` were refactored to take
+  the client as an explicit parameter. `stats_link_received` (fired only
+  from the aiogram process via `on_link_received`) is unaffected and still
+  uses the shared singleton. This does not change the prior amendment's
+  claim about `bot/util/stats.py` (Task 9) — that module's
+  `build_stats_report()` is only ever called from the aiogram process's
+  `/stats` admin command, a genuinely different code path from these signal
+  receivers.
 
 ---
 
