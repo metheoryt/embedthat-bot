@@ -62,6 +62,14 @@ Copy `.env.dist` to `.env` and populate:
 - Python 3.12, FFmpeg, Node.js, `vot-cli` (global npm package for YouTube audio translation)
 - Redis (separate container in `compose.yml`)
 
+## Versioning
+
+`version` in `pyproject.toml` follows semver (`major.minor.patch`), bumped by hand in the same commit/PR as the change it reflects:
+
+- **major** — breaking changes (env var renames, incompatible cache/schema changes, dropped platform support)
+- **minor** — new functionality (new link origin, new bot command/feature) that stays backward compatible
+- **patch** — bug fixes, dependency bumps, refactors with no behavior change
+
 <!-- gortex:communities:start -->
 <!-- gortex:skills:start -->
 ## Community Skills
