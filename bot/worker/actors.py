@@ -17,6 +17,7 @@ from bot.util.youtube.exc import YouTubeError
 from bot.util.youtube.schema import YouTubeVideoData
 from bot.worker.broker import broker  # noqa: F401 -- registers the Redis broker before actors are declared
 from bot.worker.chat_action import with_chat_action
+from bot.worker.error_reporting import report_actor_failure  # noqa: F401 -- registers the actor with the broker
 from bot.worker.pipeline import handle_social_video, handle_youtube_video
 from bot.worker.waiters import Waiter, pop_waiters
 
@@ -81,6 +82,7 @@ async def _process_youtube_link_async(bot: Bot, chat_id: int, link: str, target_
     max_backoff=5 * 60_000,
     time_limit=45 * 60_000,
     throws=(YouTubeError,),
+    on_retry_exhausted="report_actor_failure",
 )
 def process_youtube_link(chat_id: int, link: str, target_lang: str):
     bot = Bot(token=settings.bot_token)
@@ -122,6 +124,7 @@ async def _process_social_link_async(bot: Bot, chat_id: int, url: str) -> None:
     max_backoff=5 * 60_000,
     time_limit=25 * 60_000,
     throws=(SocialDownloadError,),
+    on_retry_exhausted="report_actor_failure",
 )
 def process_social_link(chat_id: int, url: str):
     bot = Bot(token=settings.bot_token)

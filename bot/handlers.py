@@ -30,18 +30,12 @@ _SOCIAL_WAITERS_TTL = 90 * 60  # ~1.5h
 
 @router.error()
 async def error_handler(event: ErrorEvent):
-    log.critical("Critical error caused by %s", event.exception, exc_info=True)
-    if settings.admin_chat_id:
-        message = event.update.message
-        if not message:
-            return
-        msg = f"""\
-            Exception:
-            `{event.exception!r}`
-            Message text:
-            `{message.text}`
-            """
-        await message.bot.send_message(settings.admin_chat_id, msg, parse_mode="MarkdownV2")
+    message = event.update.message
+    log.critical(
+        "Unhandled error while processing update (message text: %r)",
+        message.text if message else None,
+        exc_info=event.exception,
+    )
 
 
 @router.message(CommandStart())

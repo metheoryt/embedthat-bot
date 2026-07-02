@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from bot.config import settings
 from bot.dispatcher import dp, router
 from bot.events import freeze_signals
+from bot.util.telegram_log_handler import install_admin_alert_handler
 
 
 async def main():
@@ -35,6 +36,7 @@ def setup():
     logging.getLogger("aiogram.event").setLevel(logging.WARNING)
     # logging.getLogger("pytube").setLevel(logging.DEBUG)
     # logging.getLogger("pytubefix").setLevel(logging.DEBUG)
+    install_admin_alert_handler()
 
 
 if __name__ == "__main__":

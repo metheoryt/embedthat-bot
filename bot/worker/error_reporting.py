@@ -1,0 +1,46 @@
+import logging
+
+import dramatiq
+
+from bot.worker.broker import broker  # noqa: F401 -- registers the Redis broker before the actor is declared
+
+log = logging.getLogger(__name__)
+
+_TRACEBACK_LIMIT = 3000  # keep well under Telegram's 4096-char message cap
+
+# the link/url is always the second positional arg for these actors
+# (process_youtube_link(chat_id, link, target_lang), process_social_link(chat_id, url))
+_LINK_ARG_ACTORS = ("process_youtube_link", "process_social_link")
+
+
+def _extract_link(message_data: dict) -> str | None:
+    args = message_data.get("args") or []
+    if message_data.get("actor_name") in _LINK_ARG_ACTORS and len(args) >= 2:
+        return args[1]
+    return None
+
+
+@dramatiq.actor(max_retries=0)
+def report_actor_failure(message_data: dict, retry_info: dict) -> None:
+    """Registered as `on_retry_exhausted` on worker actors; fires once, when
+    dramatiq's Retries middleware gives up on a message for good. Actors whose
+    `throws` option matches the exception are excluded upstream by Retries
+    itself, so this only sees genuine bugs/timeouts, not routine user-facing
+    failures (those are already reported to the user via `_notify_waiters_failure`).
+
+    Reported via log.critical rather than sending to Telegram directly -- the
+    root logger's TelegramAlertHandler (see bot.util.telegram_log_handler)
+    picks up CRITICAL records and forwards them to the admin chat.
+    """
+    options = message_data.get("options") or {}
+    traceback_text = options.get("traceback", "")
+
+    log.critical(
+        "%s failed permanently after %s retries\nlink: %s\nargs=%s kwargs=%s",
+        message_data.get("actor_name"),
+        retry_info.get("retries"),
+        _extract_link(message_data) or "n/a",
+        message_data.get("args"),
+        message_data.get("kwargs"),
+        extra={"pre_text": traceback_text[-_TRACEBACK_LIMIT:]},
+    )
