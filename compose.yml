@@ -8,6 +8,16 @@ services:
             - .:/app
             - bot_venv:/app/.venv
         restart: unless-stopped
+    worker:
+        image: metheoryt/embedthat-bot:latest
+        build: .
+        env_file:
+            - .env
+        volumes:
+            - .:/app
+            - bot_venv:/app/.venv
+        command: dramatiq bot.worker.actors --processes 1 --threads 4
+        restart: unless-stopped
     redis:
         image: redis/redis-stack:latest
         ports:
