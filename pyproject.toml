@@ -16,3 +16,37 @@ dependencies = [
     "redis[hiredis]>=5.2.1",
     "yt-dlp>=2026.3.17",
 ]
+
+[tool.pyright]
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+include = ["bot", "main.py"]
+exclude = ["**/__pycache__", ".venv", "build", "dist"]
+useLibraryCodeForTypes = true
+typeCheckingMode = "standard"
+
+reportMissingImports = "error"
+reportMissingModuleSource = "warning"
+reportMissingTypeStubs = "warning"
+reportAttributeAccessIssue = "error"
+reportMissingParameterType = "error"
+reportUntypedBaseClass = "error"
+reportUntypedNamedTuple = "error"
+reportUntypedFunctionDecorator = "warning"
+reportUntypedClassDecorator = "warning"
+reportUnknownParameterType = "warning"
+reportUnknownArgumentType = "warning"
+reportUnknownVariableType = "warning"
+reportUnknownMemberType = "warning"
+reportUnknownLambdaType = "warning"
+reportAny = "warning"
+reportExplicitAny = "warning"
+reportPrivateImportUsage = "warning"
+reportWildcardImportFromLibrary = "warning"
+reportImplicitOverride = "warning"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.411",
+]
