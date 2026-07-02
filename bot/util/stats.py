@@ -3,6 +3,14 @@ from datetime import date, timedelta
 
 from bot.util.redis import redis_client
 from bot.config import settings
+from bot.worker.broker import broker as dramatiq_broker
+
+
+async def _queue_stats() -> dict:
+    namespace = dramatiq_broker.namespace
+    pending = await redis_client.hlen(f"{namespace}:default.msgs")
+    failed = await redis_client.zcard(f"{namespace}:default.XQ")
+    return {"pending": pending, "failed": failed}
 
 
 async def _period_stats(dates: list[str]) -> dict:
@@ -91,10 +99,11 @@ async def build_stats_report() -> str:
     week_start = today - timedelta(days=today.weekday())
     month_start = today.replace(day=1)
 
-    today_stats, week_stats, month_stats = await asyncio.gather(
+    today_stats, week_stats, month_stats, queue_stats = await asyncio.gather(
         _period_stats([today.strftime("%Y-%m-%d")]),
         _period_stats(_date_range(week_start, today)),
         _period_stats(_date_range(month_start, today)),
+        _queue_stats(),
     )
 
     today_label = f"Today ({today.strftime('%b %-d')})"
@@ -109,4 +118,6 @@ async def build_stats_report() -> str:
         _fmt_section(week_label, week_stats),
         "",
         _fmt_section(month_label, month_stats),
+        "",
+        f"🔧 Queue: pending {queue_stats['pending']} | failed {queue_stats['failed']}",
     ])
