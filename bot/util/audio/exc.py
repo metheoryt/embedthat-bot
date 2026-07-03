@@ -1,0 +1,2 @@
+class AudioDownloadError(Exception):
+    pass
