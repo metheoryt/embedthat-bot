@@ -9,6 +9,9 @@ from aiogram.exceptions import TelegramNetworkError
 
 from bot.config import settings
 from bot.events.signals import on_yt_video_fail, on_social_video_fail
+from bot.util.audio.download import download_track
+from bot.util.audio.exc import AudioDownloadError
+from bot.util.audio.schema import AudioTrackData
 from bot.util.social.download import download_social_video
 from bot.util.social.exc import SocialDownloadError
 from bot.util.social.schema import SocialVideoData
@@ -128,3 +131,59 @@ async def handle_social_video(bot: Bot, video: SocialVideoData) -> SocialVideoDa
         log.info("sending %d part(s) to dump chat for %s", len(file_paths), video.link)
         video.file_ids = await _upload_parts_to_dump_chat(bot, file_paths, video.width, video.height)
         return video
+
+
+async def handle_audio_page(bot: Bot, tracks: list[AudioTrackData]) -> int:
+    """
+    Downloads and dump-chat-uploads every track in `tracks` missing a file_id,
+    mutating each in place. Returns how many tracks failed and were skipped --
+    one bad track (geo-blocked/removed) shouldn't take down the whole page.
+    """
+    failed = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        for track in tracks:
+            if track.file_id:
+                continue
+
+            file_path = None
+            exc = None
+            for i in range(3):
+                try:
+                    file_path = await asyncio.to_thread(download_track, track, tmp_path)
+                    exc = None
+                    break
+                except AudioDownloadError as ex:
+                    exc = ex
+                    break  # unrecoverable for this track -- don't retry
+                except Exception as ex:
+                    exc = ex
+                    log.error("failed to download track %s on try #%d: %r", track.webpage_url, i + 1, exc)
+                    await asyncio.sleep(2)
+
+            if exc or file_path is None:
+                log.error("giving up on track %s: %r", track.webpage_url, exc)
+                failed += 1
+                continue
+
+            media_message = None
+            for i in range(3):
+                try:
+                    media_message = await bot.send_audio(
+                        settings.dump_chat_id,
+                        types.FSInputFile(file_path),
+                        performer=track.uploader,
+                        title=track.title,
+                        duration=track.duration,
+                    )
+                    break
+                except TelegramNetworkError:
+                    if i == 2:
+                        raise
+                    log.warning('failed to send an audio track, retrying in 2 seconds')
+                    await asyncio.sleep(2)
+
+            track.file_id = media_message.audio.file_id
+            log.info("uploaded track %s -> %s", track.webpage_url, track.file_id)
+
+    return failed
