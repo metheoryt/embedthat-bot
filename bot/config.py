@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     enable_audio_translation: bool = False
     max_video_resolution: int = 480
+    max_playlist_tracks: int = 200
 
     # populated on setup
     bot_username: str | None = None
