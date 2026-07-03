@@ -12,6 +12,9 @@ from redis.asyncio.lock import Lock
 
 from bot.config import settings
 from bot.events.signals import on_yt_video_sent, on_social_video_sent
+from bot.util.audio.exc import AudioDownloadError
+from bot.util.audio.schema import AudioRequestData, AudioTrackData
+from bot.util.audio.download import probe_link
 from bot.util.redis_lock import HeartbeatLock
 from bot.util.social.exc import SocialDownloadError
 from bot.util.social.schema import SocialVideoData
@@ -22,7 +25,7 @@ from bot.util.youtube.video import get_audio_stream
 from bot.worker.broker import broker  # noqa: F401 -- registers the Redis broker before actors are declared
 from bot.worker.chat_action import with_chat_action
 from bot.worker.error_reporting import report_actor_failure  # noqa: F401 -- registers the actor with the broker
-from bot.worker.pipeline import handle_social_video, handle_youtube_video
+from bot.worker.pipeline import handle_audio_page, handle_social_video, handle_youtube_video
 from bot.worker.waiters import Waiter, pop_waiters
 
 log = logging.getLogger(__name__)
@@ -81,6 +84,33 @@ async def _notify_audio_waiters_success(bot: Bot, waiters: list[Waiter], video: 
             title=video.yt.title,
             duration=video.yt.length,
         )
+
+
+async def _resolve_cached_tracks(redis_client: redis.Redis, tracks: list[AudioTrackData]) -> None:
+    """Fills in file_id/title/uploader/duration for any track already present in the
+    per-track dedup cache, so handle_audio_page only downloads genuine misses."""
+    for track in tracks:
+        if track.file_id:
+            continue
+        cached_raw = await redis_client.get(track.cache_key)
+        if not cached_raw:
+            continue
+        cached = AudioTrackData.model_validate_json(cached_raw)
+        track.file_id = cached.file_id
+        track.title = track.title or cached.title
+        track.uploader = track.uploader or cached.uploader
+        track.duration = track.duration or cached.duration
+
+
+async def _save_tracks_to_cache(redis_client: redis.Redis, tracks: list[AudioTrackData]) -> None:
+    for track in tracks:
+        if track.file_id:
+            await redis_client.set(track.cache_key, track.model_dump_json())
+
+
+async def _notify_audio_page_waiters_success(bot: Bot, waiters: list[Waiter], audio: AudioRequestData, page: int) -> None:
+    for waiter in waiters:
+        await audio.send_to_chat(bot, waiter.chat_id, page=page)
 
 
 @with_chat_action()
@@ -204,6 +234,29 @@ async def _process_social_link_async(bot: Bot, chat_id: int, url: str) -> None:
         lock = Lock(redis_client, f'{video.cache_key}:lock', timeout=20 * 60, blocking_timeout=21 * 60)
         async with HeartbeatLock(lock):
             try:
+                is_audio, tracks = await asyncio.to_thread(probe_link, url)
+            except AudioDownloadError as e:
+                waiters = await _pop_waiters(redis_client, video.cache_key)
+                await _notify_waiters_failure(bot, waiters, f"❌ Couldn't process this link: {e}")
+                raise
+
+            if is_audio:
+                audio = AudioRequestData(link=url, tracks=tracks)
+                page_tracks = audio.page(1)
+                await _resolve_cached_tracks(redis_client, page_tracks)
+                failed = await handle_audio_page(bot, page_tracks)
+                await _save_tracks_to_cache(redis_client, page_tracks)
+                await redis_client.set(audio.cache_key, audio.model_dump_json())
+                log.info(
+                    "cached %s (%d tracks total, page 1 ready, %d failed)",
+                    audio.cache_key, len(audio.tracks), failed,
+                )
+
+                waiters = await _pop_waiters(redis_client, video.cache_key)
+                await _notify_waiters_success(bot, waiters, audio)
+                return
+
+            try:
                 video = await handle_social_video(bot, video)
             except SocialDownloadError as e:
                 waiters = await _pop_waiters(redis_client, video.cache_key)
@@ -233,5 +286,52 @@ def process_social_link(chat_id: int, url: str):
     bot = Bot(token=settings.bot_token)
     try:
         asyncio.run(_process_social_link_async(bot, chat_id, url))
+    finally:
+        asyncio.run(bot.session.close())
+
+
+@with_chat_action(ChatAction.UPLOAD_VOICE)
+async def _process_audio_page_async(bot: Bot, chat_id: int, hash16: str, page: int) -> None:
+    redis_client = redis.from_url(str(settings.redis_dsn), decode_responses=True)
+    try:
+        cache_key = f"da:{hash16}"
+        page_key = f"{cache_key}:page:{page}"
+
+        audio_raw = await redis_client.get(cache_key)
+        if not audio_raw:
+            log.error("cache entry %s vanished before page %d could be processed", cache_key, page)
+            waiters = await _pop_waiters(redis_client, page_key)
+            await _notify_waiters_failure(bot, waiters, "❌ This playlist is no longer cached, please resend the link.")
+            return
+
+        audio = AudioRequestData.model_validate_json(audio_raw)
+
+        lock = Lock(redis_client, f'{page_key}:lock', timeout=20 * 60, blocking_timeout=21 * 60)
+        async with HeartbeatLock(lock):
+            page_tracks = audio.page(page)
+            await _resolve_cached_tracks(redis_client, page_tracks)
+            failed = await handle_audio_page(bot, page_tracks)
+            await _save_tracks_to_cache(redis_client, page_tracks)
+            await redis_client.set(cache_key, audio.model_dump_json())
+            log.info("cached %s page %d (%d failed)", cache_key, page, failed)
+
+            waiters = await _pop_waiters(redis_client, page_key)
+            await _notify_audio_page_waiters_success(bot, waiters, audio, page)
+    finally:
+        await redis_client.aclose()
+
+
+@dramatiq.actor(
+    max_retries=2,
+    min_backoff=30_000,
+    max_backoff=5 * 60_000,
+    time_limit=30 * 60_000,
+    throws=(AudioDownloadError,),
+    on_retry_exhausted="report_actor_failure",
+)
+def process_audio_page(chat_id: int, hash16: str, page: int):
+    bot = Bot(token=settings.bot_token)
+    try:
+        asyncio.run(_process_audio_page_async(bot, chat_id, hash16, page))
     finally:
         asyncio.run(bot.session.close())

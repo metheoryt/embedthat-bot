@@ -8,9 +8,10 @@ log = logging.getLogger(__name__)
 
 _TRACEBACK_LIMIT = 3000  # keep well under Telegram's 4096-char message cap
 
-# the link/url is always the second positional arg for these actors
-# (process_youtube_link(chat_id, link, target_lang), process_social_link(chat_id, url))
-_LINK_ARG_ACTORS = ("process_youtube_link", "process_social_link")
+# the link (or, for process_audio_page, the link's cache hash) is always the second
+# positional arg for these actors: process_youtube_link(chat_id, link, target_lang),
+# process_social_link(chat_id, url), process_audio_page(chat_id, hash16, page)
+_LINK_ARG_ACTORS = ("process_youtube_link", "process_social_link", "process_audio_page")
 
 
 def _extract_link(message_data: dict) -> str | None:
