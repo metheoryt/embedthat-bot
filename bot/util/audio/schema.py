@@ -23,6 +23,7 @@ class AudioTrackData(BaseModel):
 
     @property
     def as_input_media(self) -> types.InputMediaAudio:
+        assert self.file_id is not None
         return types.InputMediaAudio(
             media=cast(str, self.file_id),
             title=self.title,
