@@ -23,7 +23,6 @@ log = logging.getLogger(__name__)
 _URL_RE = re.compile(r"https?://\S+")
 _YOUTUBE_URL_RE = re.compile(r"https?://((www|m)\.)?youtube\.com/|https?://youtu\.be/")
 
-_PROCESSING_TEXT = "⏳ Processing…"
 _YOUTUBE_WAITERS_TTL = 3 * 60 * 60  # generous vs. worst-case retry budget (~2.5h)
 _SOCIAL_WAITERS_TTL = 90 * 60  # ~1.5h
 
@@ -82,12 +81,10 @@ async def embed_youtube_videos(message: types.Message):
             return
 
     log.info("cache miss for %s, registering waiter", video.cache_key)
-    ack = await message.reply(_PROCESSING_TEXT)
     waiter = Waiter(
         chat_id=message.chat.id,
         chat_type=message.chat.type,
         reply_to_message_id=message.message_id,
-        ack_message_id=ack.message_id,
     )
     is_first = await register_waiter(redis_client, video.cache_key, waiter, _YOUTUBE_WAITERS_TTL)
     if is_first:
@@ -108,6 +105,12 @@ async def get_audio(callback: types.CallbackQuery):
         await callback.message.reply("❌ This video is no longer cached, please resend the link.")
         return
 
+    # remove the button right away so a repeat tap can't queue/duplicate a delivery
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except TelegramBadRequest:
+        pass
+
     video = YouTubeVideoData.model_validate_json(video_raw)
     if video.audio_file_id:
         await callback.message.answer_audio(
@@ -123,7 +126,6 @@ async def get_audio(callback: types.CallbackQuery):
         chat_id=callback.message.chat.id,
         chat_type=callback.message.chat.type,
         reply_to_message_id=callback.message.message_id,
-        ack_message_id=callback.message.message_id,
     )
     is_first = await register_waiter(redis_client, f"{cache_key}:audio", waiter, _YOUTUBE_WAITERS_TTL)
     if is_first:
@@ -146,12 +148,10 @@ async def _process_social_url(message: Message, url: str) -> None:
             return
 
     log.info("cache miss for %s, registering waiter", video.cache_key)
-    ack = await message.reply(_PROCESSING_TEXT)
     waiter = Waiter(
         chat_id=message.chat.id,
         chat_type=message.chat.type,
         reply_to_message_id=message.message_id,
-        ack_message_id=ack.message_id,
     )
     is_first = await register_waiter(redis_client, video.cache_key, waiter, _SOCIAL_WAITERS_TTL)
     if is_first:

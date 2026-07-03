@@ -44,10 +44,9 @@ class YouTubeVideoData(BaseModel):
 
     @property
     def caption(self):
-        return (
-            f"{self.yt.title} [{self.translated_lang or self.source_lang or TargetLang.ORIGINAL} audio]\n"
-            f"{self.link}\n"
-        )
+        if self.translated_lang and self.translated_lang != TargetLang.ORIGINAL:
+            return f"{self.yt.title} [{self.translated_lang} audio]\n{self.link}\n"
+        return f"{self.yt.title}\n{self.link}\n"
 
     @property
     def media_group(self):
@@ -81,14 +80,20 @@ class YouTubeVideoData(BaseModel):
 
     async def send_to_chat(self, bot: Bot, chat_id: int, reply_to_message_id: int | None = None):
         if len(self.file_ids) > 1:
+            # send_media_group doesn't support reply_markup, so the button has to ride a follow-up message
             await bot.send_media_group(chat_id, self.media_group, reply_to_message_id=reply_to_message_id)
+            await bot.send_message(chat_id, "🎵 Want just the audio?", reply_markup=self.audio_button_markup)
         else:
-            await bot.send_video(chat_id, **self.single_video, reply_to_message_id=reply_to_message_id)
-        await bot.send_message(chat_id, "🎵 Want just the audio?", reply_markup=self.audio_button_markup)
+            await bot.send_video(
+                chat_id,
+                **self.single_video,
+                reply_to_message_id=reply_to_message_id,
+                reply_markup=self.audio_button_markup,
+            )
 
     async def reply_to(self, message: types.Message):
         if len(self.file_ids) > 1:
             await message.reply_media_group(self.media_group)
+            await message.reply("🎵 Want just the audio?", reply_markup=self.audio_button_markup)
         else:
-            await message.reply_video(**self.single_video)
-        await message.reply("🎵 Want just the audio?", reply_markup=self.audio_button_markup)
+            await message.reply_video(**self.single_video, reply_markup=self.audio_button_markup)

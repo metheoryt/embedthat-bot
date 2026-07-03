@@ -6,7 +6,7 @@ class Waiter(BaseModel):
     chat_id: int
     chat_type: str
     reply_to_message_id: int
-    ack_message_id: int
+    ack_message_id: int | None = None
 
 
 def _waiters_key(cache_key: str) -> str:

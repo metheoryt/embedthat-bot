@@ -28,18 +28,34 @@ from bot.worker.waiters import Waiter, pop_waiters
 log = logging.getLogger(__name__)
 
 
-async def _safe_edit_ack(bot: Bot, chat_id: int, message_id: int, text: str) -> None:
+async def _safe_edit_ack(bot: Bot, chat_id: int, message_id: int | None, text: str) -> None:
+    if message_id is None:
+        return
     try:
         await bot.edit_message_text(text, chat_id=chat_id, message_id=message_id)
     except TelegramBadRequest:
         log.warning("could not edit ack message %s in chat %s", message_id, chat_id)
 
 
-async def _safe_delete_ack(bot: Bot, chat_id: int, message_id: int) -> None:
+async def _safe_delete_ack(bot: Bot, chat_id: int, message_id: int | None) -> None:
+    if message_id is None:
+        return
     try:
         await bot.delete_message(chat_id, message_id)
     except TelegramBadRequest:
         log.warning("could not delete ack message %s in chat %s", message_id, chat_id)
+
+
+async def _pop_waiters(redis_client: redis.Redis, cache_key: str) -> list[Waiter]:
+    """pop_waiters, deduped by chat_id so a re-sent link/re-tapped button can't cause a double delivery."""
+    waiters = await pop_waiters(redis_client, cache_key)
+    seen: set[int] = set()
+    deduped = []
+    for waiter in waiters:
+        if waiter.chat_id not in seen:
+            seen.add(waiter.chat_id)
+            deduped.append(waiter)
+    return deduped
 
 
 async def _notify_waiters_success(bot: Bot, waiters: list[Waiter], video) -> None:
@@ -50,7 +66,10 @@ async def _notify_waiters_success(bot: Bot, waiters: list[Waiter], video) -> Non
 
 async def _notify_waiters_failure(bot: Bot, waiters: list[Waiter], text: str) -> None:
     for waiter in waiters:
-        await _safe_edit_ack(bot, waiter.chat_id, waiter.ack_message_id, text)
+        if waiter.ack_message_id is not None:
+            await _safe_edit_ack(bot, waiter.chat_id, waiter.ack_message_id, text)
+        else:
+            await bot.send_message(waiter.chat_id, text, reply_to_message_id=waiter.reply_to_message_id)
 
 
 async def _notify_audio_waiters_success(bot: Bot, waiters: list[Waiter], video: YouTubeVideoData) -> None:
@@ -76,14 +95,14 @@ async def _process_youtube_link_async(bot: Bot, chat_id: int, link: str, target_
             try:
                 video = await handle_youtube_video(bot, video)
             except YouTubeError as e:
-                waiters = await pop_waiters(redis_client, video.cache_key)
+                waiters = await _pop_waiters(redis_client, video.cache_key)
                 await _notify_waiters_failure(bot, waiters, f"❌ Couldn't process this video: {e}")
                 raise
 
             await redis_client.set(video.cache_key, video.model_dump_json())
             log.info("cached %s (%d files)", video.cache_key, len(video.file_ids))
 
-            waiters = await pop_waiters(redis_client, video.cache_key)
+            waiters = await _pop_waiters(redis_client, video.cache_key)
             await _notify_waiters_success(bot, waiters, video)
             for waiter in waiters:
                 await on_yt_video_sent.send(link, waiter.chat_id, waiter.chat_type, bot, video, True)
@@ -117,7 +136,7 @@ async def _process_youtube_audio_async(bot: Bot, chat_id: int, video_id: str, re
         video_raw = await redis_client.get(cache_key)
         if not video_raw:
             log.error("cache entry %s vanished before audio extraction could run", cache_key)
-            waiters = await pop_waiters(redis_client, audio_waiters_key)
+            waiters = await _pop_waiters(redis_client, audio_waiters_key)
             await _notify_waiters_failure(bot, waiters, "❌ This video is no longer cached, please resend the link.")
             return
 
@@ -130,7 +149,7 @@ async def _process_youtube_audio_async(bot: Bot, chat_id: int, video_id: str, re
                     try:
                         audio_path = await asyncio.to_thread(get_audio_stream, video, Path(tmp))
                     except YouTubeError as e:
-                        waiters = await pop_waiters(redis_client, audio_waiters_key)
+                        waiters = await _pop_waiters(redis_client, audio_waiters_key)
                         await _notify_waiters_failure(bot, waiters, f"❌ Couldn't extract audio: {e}")
                         raise
 
@@ -154,7 +173,7 @@ async def _process_youtube_audio_async(bot: Bot, chat_id: int, video_id: str, re
                 await redis_client.set(cache_key, video.model_dump_json())
                 log.info("cached audio for %s", cache_key)
 
-            waiters = await pop_waiters(redis_client, audio_waiters_key)
+            waiters = await _pop_waiters(redis_client, audio_waiters_key)
             await _notify_audio_waiters_success(bot, waiters, video)
     finally:
         await redis_client.aclose()
@@ -187,14 +206,14 @@ async def _process_social_link_async(bot: Bot, chat_id: int, url: str) -> None:
             try:
                 video = await handle_social_video(bot, video)
             except SocialDownloadError as e:
-                waiters = await pop_waiters(redis_client, video.cache_key)
+                waiters = await _pop_waiters(redis_client, video.cache_key)
                 await _notify_waiters_failure(bot, waiters, f"❌ Couldn't download this video: {e}")
                 raise
 
             await redis_client.set(video.cache_key, video.model_dump_json())
             log.info("cached %s (%s)", video.cache_key, video.origin)
 
-            waiters = await pop_waiters(redis_client, video.cache_key)
+            waiters = await _pop_waiters(redis_client, video.cache_key)
             await _notify_waiters_success(bot, waiters, video)
             for waiter in waiters:
                 await on_social_video_sent.send(url, waiter.chat_id, waiter.chat_type, bot, video, True)
