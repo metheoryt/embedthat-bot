@@ -40,7 +40,11 @@ async def error_handler(event: ErrorEvent):
 
 @router.message(CommandStart())
 async def start(message: types.Message):
-    await message.reply("Send a link and i will reply with a nice embedding or a video")
+    await message.reply(
+        "Send a link and I'll reply with a nice embedding or a video.\n\n"
+        "📹 Video: YouTube, Instagram, TikTok, Twitter/X, Facebook, Reddit, and more\n"
+        "🎵 Audio: SoundCloud, Bandcamp, Mixcloud, Audiomack, and more"
+    )
 
 
 @router.message(Command("stats"))
