@@ -279,7 +279,7 @@ async def _process_social_link_async(bot: Bot, chat_id: int, url: str) -> None:
     min_backoff=30_000,
     max_backoff=5 * 60_000,
     time_limit=25 * 60_000,
-    throws=(SocialDownloadError,),
+    throws=(SocialDownloadError, AudioDownloadError),
     on_retry_exhausted="report_actor_failure",
 )
 def process_social_link(chat_id: int, url: str):
