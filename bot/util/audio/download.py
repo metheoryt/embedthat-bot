@@ -48,20 +48,30 @@ def probe_link(url: str) -> tuple[bool, list[AudioTrackData]]:
             raise AudioDownloadError("Playlist has no tracks")
 
         first_url = entries[0].get("url") or entries[0].get("webpage_url")
+        if not first_url:
+            raise AudioDownloadError("First playlist entry has no URL")
         if not _is_audio_only(_deep_probe(first_url)):
             return False, []
 
-        tracks = [
-            AudioTrackData(
-                extractor=e.get("ie_key") or info.get("extractor_key") or "unknown",
-                id=str(e["id"]),
-                webpage_url=e.get("url") or e.get("webpage_url"),
-                title=e.get("title"),
-                uploader=e.get("uploader"),
-                duration=int(e["duration"]) if e.get("duration") else None,
+        tracks = []
+        for e in entries:
+            webpage_url = e.get("url") or e.get("webpage_url")
+            if not webpage_url or "id" not in e:
+                log.warning("skipping malformed playlist entry (missing id/url): %r", e)
+                continue
+            tracks.append(
+                AudioTrackData(
+                    extractor=e.get("ie_key") or info.get("extractor_key") or "unknown",
+                    id=str(e["id"]),
+                    webpage_url=webpage_url,
+                    title=e.get("title"),
+                    uploader=e.get("uploader"),
+                    duration=int(e["duration"]) if e.get("duration") else None,
+                )
             )
-            for e in entries
-        ]
+        if not tracks:
+            raise AudioDownloadError("Playlist has no usable tracks")
+
         log.info("classified %s as audio playlist, %d tracks", url, len(tracks))
         return True, tracks
 
