@@ -184,9 +184,22 @@ async def handle_audio_page(bot: Bot, tracks: list[AudioTrackData]) -> int:
             log.info("uploaded track %s -> %s", track.webpage_url, track.file_id)
             return True
 
+    results: list[bool] = []
+
+    async def process_one_and_collect(track: AudioTrackData, tmp_path: Path) -> None:
+        results.append(await process_one(track, tmp_path))
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         pending = [t for t in tracks if not t.file_id]
-        results = await asyncio.gather(*(process_one(t, tmp_path) for t in pending))
+        try:
+            async with asyncio.TaskGroup() as tg:
+                for t in pending:
+                    tg.create_task(process_one_and_collect(t, tmp_path))
+        except* Exception as eg:
+            # TaskGroup wraps propagated exceptions in an ExceptionGroup (PEP 654).
+            # Unwrap to the first real exception so callers can still catch e.g.
+            # TelegramNetworkError directly, same as the rest of this module does.
+            raise eg.exceptions[0] from None
 
     return sum(1 for ok in results if not ok)
