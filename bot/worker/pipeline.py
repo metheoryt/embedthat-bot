@@ -200,6 +200,8 @@ async def handle_audio_page(bot: Bot, tracks: list[AudioTrackData]) -> int:
             # TaskGroup wraps propagated exceptions in an ExceptionGroup (PEP 654).
             # Unwrap to the first real exception so callers can still catch e.g.
             # TelegramNetworkError directly, same as the rest of this module does.
+            for exc in eg.exceptions[1:]:
+                log.error("additional error during page processing: %r", exc)
             raise eg.exceptions[0] from None
 
     return sum(1 for ok in results if not ok)
