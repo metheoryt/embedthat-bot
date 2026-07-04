@@ -86,21 +86,25 @@ class AudioRequestData(BaseModel):
             )
             return
 
+        skipped = len(page_tracks) - len(deliverable)
+        markup = self.pager_markup(page)
+        caption = self._pager_caption(skipped) if (markup or skipped) else None
+
         if len(deliverable) == 1:
             t = deliverable[0]
             await bot.send_audio(
                 chat_id, cast(str, t.file_id), performer=t.uploader, title=t.title, duration=t.duration,
                 reply_to_message_id=reply_to_message_id,
+                caption=caption, parse_mode="HTML" if caption else None, reply_markup=markup,
             )
         else:
             await bot.send_media_group(
                 chat_id, [t.as_input_media for t in deliverable], reply_to_message_id=reply_to_message_id
             )
-
-        skipped = len(page_tracks) - len(deliverable)
-        markup = self.pager_markup(page)
-        if markup or skipped:
-            await bot.send_message(chat_id, self._pager_text(page, skipped), reply_markup=markup)
+            if caption:
+                await bot.send_message(
+                    chat_id, caption, parse_mode="HTML", reply_markup=markup, disable_web_page_preview=True
+                )
 
     async def reply_to(self, message: types.Message, page: int = 1) -> None:
         page_tracks = self.page(page)
@@ -109,13 +113,17 @@ class AudioRequestData(BaseModel):
             await message.reply("❌ No tracks on this page could be downloaded.")
             return
 
-        if len(deliverable) == 1:
-            t = deliverable[0]
-            await message.reply_audio(cast(str, t.file_id), performer=t.uploader, title=t.title, duration=t.duration)
-        else:
-            await message.reply_media_group([t.as_input_media for t in deliverable])
-
         skipped = len(page_tracks) - len(deliverable)
         markup = self.pager_markup(page)
-        if markup or skipped:
-            await message.reply(self._pager_text(page, skipped), reply_markup=markup)
+        caption = self._pager_caption(skipped) if (markup or skipped) else None
+
+        if len(deliverable) == 1:
+            t = deliverable[0]
+            await message.reply_audio(
+                cast(str, t.file_id), performer=t.uploader, title=t.title, duration=t.duration,
+                caption=caption, parse_mode="HTML" if caption else None, reply_markup=markup,
+            )
+        else:
+            await message.reply_media_group([t.as_input_media for t in deliverable])
+            if caption:
+                await message.reply(caption, parse_mode="HTML", reply_markup=markup, disable_web_page_preview=True)
