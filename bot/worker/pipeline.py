@@ -138,14 +138,12 @@ async def handle_audio_page(bot: Bot, tracks: list[AudioTrackData]) -> int:
     Downloads and dump-chat-uploads every track in `tracks` missing a file_id,
     mutating each in place. Returns how many tracks failed and were skipped --
     one bad track (geo-blocked/removed) shouldn't take down the whole page.
+    Up to 3 tracks are downloaded/uploaded concurrently.
     """
-    failed = 0
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        for track in tracks:
-            if track.file_id:
-                continue
+    semaphore = asyncio.Semaphore(3)
 
+    async def process_one(track: AudioTrackData, tmp_path: Path) -> bool:
+        async with semaphore:
             file_path = None
             exc = None
             for i in range(3):
@@ -163,8 +161,7 @@ async def handle_audio_page(bot: Bot, tracks: list[AudioTrackData]) -> int:
 
             if exc or file_path is None:
                 log.error("giving up on track %s: %r", track.webpage_url, exc)
-                failed += 1
-                continue
+                return False
 
             media_message = None
             for i in range(3):
@@ -185,5 +182,11 @@ async def handle_audio_page(bot: Bot, tracks: list[AudioTrackData]) -> int:
 
             track.file_id = media_message.audio.file_id
             log.info("uploaded track %s -> %s", track.webpage_url, track.file_id)
+            return True
 
-    return failed
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        pending = [t for t in tracks if not t.file_id]
+        results = await asyncio.gather(*(process_one(t, tmp_path) for t in pending))
+
+    return sum(1 for ok in results if not ok)
