@@ -15,6 +15,7 @@ from bot.events.signals import on_yt_video_sent, on_social_video_sent
 from bot.util.audio.exc import AudioDownloadError
 from bot.util.audio.schema import AudioRequestData, AudioTrackData
 from bot.util.audio.download import probe_link
+from bot.util.audio.pager import redeliver_page
 from bot.util.redis_lock import HeartbeatLock
 from bot.util.social.exc import SocialDownloadError
 from bot.util.social.schema import SocialVideoData
@@ -108,9 +109,11 @@ async def _save_tracks_to_cache(redis_client: redis.Redis, tracks: list[AudioTra
             await redis_client.set(track.cache_key, track.model_dump_json())
 
 
-async def _notify_audio_page_waiters_success(bot: Bot, waiters: list[Waiter], audio: AudioRequestData, page: int) -> None:
+async def _notify_audio_page_waiters_success(
+    redis_client: redis.Redis, bot: Bot, waiters: list[Waiter], audio: AudioRequestData, page: int,
+) -> None:
     for waiter in waiters:
-        await audio.send_to_chat(bot, waiter.chat_id, page=page)
+        await redeliver_page(redis_client, bot, waiter.chat_id, waiter.reply_to_message_id, audio, page)
 
 
 @with_chat_action()
@@ -316,7 +319,7 @@ async def _process_audio_page_async(bot: Bot, chat_id: int, hash16: str, page: i
             log.info("cached %s page %d (%d failed)", cache_key, page, failed)
 
             waiters = await _pop_waiters(redis_client, page_key)
-            await _notify_audio_page_waiters_success(bot, waiters, audio, page)
+            await _notify_audio_page_waiters_success(redis_client, bot, waiters, audio, page)
     finally:
         await redis_client.aclose()
 
