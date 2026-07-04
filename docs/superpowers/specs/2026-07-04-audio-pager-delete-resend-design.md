@@ -160,13 +160,16 @@ All three call sites route through this:
 
 ### 6. Duplicate-tap guard
 
-`get_audio_page` currently clears the tapped message's `reply_markup`
-immediately, before checking cache-hit/miss, to stop a repeat tap from
-double-queuing. Once `redeliver_page` deletes that same message moments later
-on a cache hit, the edit is redundant work (harmless, but pointless). Keep
-the immediate clear-and-swallow only for the **cache-miss** branch, where the
-old message keeps showing (with buttons now removed) until the background
-job resolves and `redeliver_page` finally deletes it.
+`get_audio_page` clears the tapped message's `reply_markup` immediately,
+before checking cache-hit/miss, same as today — this stays unconditional for
+**both** branches, not scoped to cache-miss only. Reasoning: on a cache hit,
+`redeliver_page` still does a network round-trip to send the new page before
+it deletes the old one; a fast repeat tap in that window would run
+`get_audio_page` twice, and since both invocations read-then-overwrite the
+same Redis key, one of the two newly-sent pages would end up permanently
+untracked and never deleted. Clearing the markup immediately (before either
+branch runs) closes that race — the one wasted edit-call on the cache-hit
+path (the message is deleted moments later anyway) is a cheap price for it.
 
 ## Files touched
 
