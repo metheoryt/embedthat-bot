@@ -7,7 +7,6 @@ from aiogram import types, Bot
 from pydantic import BaseModel, Field
 
 PAGE_SIZE = 10  # Telegram's InputMediaAudio media-group cap
-_NAV_PLACEHOLDER = "⁣"  # invisible separator -- Telegram requires non-empty message text
 
 
 class AudioTrackData(BaseModel):
@@ -64,9 +63,6 @@ class AudioRequestData(BaseModel):
                     text="◀️ Back", callback_data=f"apg:{self.hash16}:{page - 1}:{root_message_id}"
                 )
             )
-        buttons.append(
-            types.InlineKeyboardButton(text=f"{page}/{self.total_pages}", callback_data="apg:noop")
-        )
         if page < self.total_pages:
             buttons.append(
                 types.InlineKeyboardButton(
@@ -75,10 +71,12 @@ class AudioRequestData(BaseModel):
             )
         return types.InlineKeyboardMarkup(inline_keyboard=[buttons])
 
-    def _pager_caption(self, skipped: int) -> str:
+    def _footer_text(self, page: int, skipped: int) -> str:
         parts = []
         if skipped:
             parts.append(f"⚠️ {skipped} unavailable")
+        if self.total_pages > 1:
+            parts.append(f"Page {page}/{self.total_pages}")
         parts.append(f'🔗 <a href="{html.escape(self.link)}">Source</a>')
         return "\n".join(parts)
 
@@ -93,28 +91,20 @@ class AudioRequestData(BaseModel):
 
         skipped = len(page_tracks) - len(deliverable)
         markup = self.pager_markup(page, reply_to_message_id)
-        caption = self._pager_caption(skipped)
+        footer = self._footer_text(page, skipped)
 
         if len(deliverable) == 1:
             t = deliverable[0]
             message = await bot.send_audio(
                 chat_id, cast(str, t.file_id), performer=t.uploader, title=t.title, duration=t.duration,
                 reply_to_message_id=reply_to_message_id,
-                caption=caption, parse_mode="HTML", reply_markup=markup,
             )
-            return [message.message_id]
+            message_ids = [message.message_id]
+        else:
+            media: list[types.InputMediaAudio] = [t.as_input_media for t in deliverable]
+            messages = await bot.send_media_group(chat_id, media, reply_to_message_id=reply_to_message_id)
+            message_ids = [m.message_id for m in messages]
 
-        first = deliverable[0]
-        media: list[types.InputMediaAudio] = [
-            types.InputMediaAudio(
-                media=cast(str, first.file_id), title=first.title, performer=first.uploader,
-                duration=first.duration, caption=caption, parse_mode="HTML",
-            ),
-            *(t.as_input_media for t in deliverable[1:]),
-        ]
-        messages = await bot.send_media_group(chat_id, media, reply_to_message_id=reply_to_message_id)
-        message_ids = [m.message_id for m in messages]
-        if markup:
-            nav = await bot.send_message(chat_id, _NAV_PLACEHOLDER, reply_markup=markup)
-            message_ids.append(nav.message_id)
+        footer_message = await bot.send_message(chat_id, footer, parse_mode="HTML", reply_markup=markup)
+        message_ids.append(footer_message.message_id)
         return message_ids
