@@ -7,6 +7,7 @@ from aiogram import types, Bot
 from pydantic import BaseModel, Field
 
 PAGE_SIZE = 10  # Telegram's InputMediaAudio media-group cap
+_NAV_PLACEHOLDER = "⁣"  # invisible separator -- Telegram requires non-empty message text
 
 
 class AudioTrackData(BaseModel):
@@ -81,53 +82,39 @@ class AudioRequestData(BaseModel):
         parts.append(f'🔗 <a href="{html.escape(self.link)}">Source</a>')
         return "\n".join(parts)
 
-    async def send_to_chat(self, bot: Bot, chat_id: int, reply_to_message_id: int | None = None, page: int = 1) -> None:
+    async def send_to_chat(self, bot: Bot, chat_id: int, reply_to_message_id: int, page: int = 1) -> list[int]:
         page_tracks = self.page(page)
         deliverable = [t for t in page_tracks if t.file_id]
         if not deliverable:
-            await bot.send_message(
+            message = await bot.send_message(
                 chat_id, "❌ No tracks on this page could be downloaded.", reply_to_message_id=reply_to_message_id
             )
-            return
+            return [message.message_id]
 
         skipped = len(page_tracks) - len(deliverable)
-        markup = self.pager_markup(page)
-        caption = self._pager_caption(skipped) if (markup or skipped) else None
+        markup = self.pager_markup(page, reply_to_message_id)
+        caption = self._pager_caption(skipped)
 
         if len(deliverable) == 1:
             t = deliverable[0]
-            await bot.send_audio(
+            message = await bot.send_audio(
                 chat_id, cast(str, t.file_id), performer=t.uploader, title=t.title, duration=t.duration,
                 reply_to_message_id=reply_to_message_id,
-                caption=caption, parse_mode="HTML" if caption else None, reply_markup=markup,
+                caption=caption, parse_mode="HTML", reply_markup=markup,
             )
-        else:
-            await bot.send_media_group(
-                chat_id, [t.as_input_media for t in deliverable], reply_to_message_id=reply_to_message_id
-            )
-            if caption:
-                await bot.send_message(
-                    chat_id, caption, parse_mode="HTML", reply_markup=markup, disable_web_page_preview=True
-                )
+            return [message.message_id]
 
-    async def reply_to(self, message: types.Message, page: int = 1) -> None:
-        page_tracks = self.page(page)
-        deliverable = [t for t in page_tracks if t.file_id]
-        if not deliverable:
-            await message.reply("❌ No tracks on this page could be downloaded.")
-            return
-
-        skipped = len(page_tracks) - len(deliverable)
-        markup = self.pager_markup(page)
-        caption = self._pager_caption(skipped) if (markup or skipped) else None
-
-        if len(deliverable) == 1:
-            t = deliverable[0]
-            await message.reply_audio(
-                cast(str, t.file_id), performer=t.uploader, title=t.title, duration=t.duration,
-                caption=caption, parse_mode="HTML" if caption else None, reply_markup=markup,
-            )
-        else:
-            await message.reply_media_group([t.as_input_media for t in deliverable])
-            if caption:
-                await message.reply(caption, parse_mode="HTML", reply_markup=markup, disable_web_page_preview=True)
+        first = deliverable[0]
+        media: list[types.InputMediaAudio] = [
+            types.InputMediaAudio(
+                media=cast(str, first.file_id), title=first.title, performer=first.uploader,
+                duration=first.duration, caption=caption, parse_mode="HTML",
+            ),
+            *(t.as_input_media for t in deliverable[1:]),
+        ]
+        messages = await bot.send_media_group(chat_id, media, reply_to_message_id=reply_to_message_id)
+        message_ids = [m.message_id for m in messages]
+        if markup:
+            nav = await bot.send_message(chat_id, _NAV_PLACEHOLDER, reply_markup=markup)
+            message_ids.append(nav.message_id)
+        return message_ids
