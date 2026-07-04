@@ -1,4 +1,5 @@
 import hashlib
+import html
 import math
 from typing import cast
 
@@ -53,24 +54,28 @@ class AudioRequestData(BaseModel):
         return self.tracks[start:start + PAGE_SIZE]
 
     def pager_markup(self, page: int) -> types.InlineKeyboardMarkup | None:
+        if self.total_pages <= 1:
+            return None
         buttons = []
         if page > 1:
             buttons.append(
                 types.InlineKeyboardButton(text="◀️ Back", callback_data=f"apg:{self.hash16}:{page - 1}")
             )
+        buttons.append(
+            types.InlineKeyboardButton(text=f"{page}/{self.total_pages}", callback_data="apg:noop")
+        )
         if page < self.total_pages:
             buttons.append(
                 types.InlineKeyboardButton(text="Next ▶️", callback_data=f"apg:{self.hash16}:{page + 1}")
             )
-        if not buttons:
-            return None
         return types.InlineKeyboardMarkup(inline_keyboard=[buttons])
 
-    def _pager_text(self, page: int, skipped: int) -> str:
-        text = f"Page {page}/{self.total_pages}"
+    def _pager_caption(self, skipped: int) -> str:
+        parts = []
         if skipped:
-            text += f" (⚠️ {skipped} unavailable)"
-        return text
+            parts.append(f"⚠️ {skipped} unavailable")
+        parts.append(f'🔗 <a href="{html.escape(self.link)}">Source</a>')
+        return "\n".join(parts)
 
     async def send_to_chat(self, bot: Bot, chat_id: int, reply_to_message_id: int | None = None, page: int = 1) -> None:
         page_tracks = self.page(page)
