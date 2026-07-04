@@ -12,6 +12,7 @@ from .enum import LinkOrigin
 from .events import on_link_received, on_yt_video_sent, on_social_video_sent
 from .util.stats import build_stats_report
 from .util.redis import redis_client
+from .util.audio.pager import redeliver_page
 from .util.audio.schema import AudioRequestData
 from .util.social.schema import SocialVideoData
 from .util.youtube.enum import TargetLang
@@ -148,8 +149,9 @@ async def get_audio_page(callback: types.CallbackQuery):
     if not isinstance(callback.message, types.Message):
         return
 
-    _, hash16, page_str = callback.data.split(":")
+    _, hash16, page_str, root_str = callback.data.split(":")
     page = int(page_str)
+    root_message_id = int(root_str)
     cache_key = f"da:{hash16}"
 
     # remove the pager buttons right away so a repeat tap can't queue/duplicate a delivery
@@ -166,9 +168,9 @@ async def get_audio_page(callback: types.CallbackQuery):
     audio = AudioRequestData.model_validate_json(audio_raw)
     page_tracks = audio.page(page)
     if all(t.file_id for t in page_tracks):
-        # callback.message.bot is used implicitly by reply_to()'s bound methods --
-        # avoids passing callback.bot (typed Bot | None) where a concrete Bot is required
-        await audio.reply_to(callback.message, page=page)
+        await redeliver_page(
+            redis_client, callback.message.bot, callback.message.chat.id, root_message_id, audio, page,
+        )
         return
 
     log.info("cache miss for %s page %d, registering waiter", cache_key, page)
@@ -176,7 +178,7 @@ async def get_audio_page(callback: types.CallbackQuery):
     waiter = Waiter(
         chat_id=callback.message.chat.id,
         chat_type=callback.message.chat.type,
-        reply_to_message_id=callback.message.message_id,
+        reply_to_message_id=root_message_id,
     )
     is_first = await register_waiter(redis_client, page_key, waiter, _SOCIAL_WAITERS_TTL)
     if is_first:
@@ -188,7 +190,7 @@ async def _process_social_url(message: Message, url: str) -> None:
     if audio_raw := await redis_client.get(audio.cache_key):
         cached_audio = AudioRequestData.model_validate_json(audio_raw)
         log.info("cache hit (audio) for %s", audio.cache_key)
-        await cached_audio.reply_to(message, page=1)
+        await redeliver_page(redis_client, message.bot, message.chat.id, message.message_id, cached_audio, page=1)
         return
 
     video = SocialVideoData.model_validate(dict(link=url))

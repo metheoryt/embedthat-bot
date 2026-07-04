@@ -5,7 +5,7 @@ from redis.asyncio import Redis
 class Waiter(BaseModel):
     chat_id: int
     chat_type: str
-    reply_to_message_id: int
+    reply_to_message_id: int  # for audio-pager waiters, this is the pager's root message id
     ack_message_id: int | None = None
 
 
