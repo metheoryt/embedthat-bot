@@ -53,20 +53,24 @@ class AudioRequestData(BaseModel):
         start = (page - 1) * PAGE_SIZE
         return self.tracks[start:start + PAGE_SIZE]
 
-    def pager_markup(self, page: int) -> types.InlineKeyboardMarkup | None:
+    def pager_markup(self, page: int, root_message_id: int) -> types.InlineKeyboardMarkup | None:
         if self.total_pages <= 1:
             return None
         buttons = []
         if page > 1:
             buttons.append(
-                types.InlineKeyboardButton(text="◀️ Back", callback_data=f"apg:{self.hash16}:{page - 1}")
+                types.InlineKeyboardButton(
+                    text="◀️ Back", callback_data=f"apg:{self.hash16}:{page - 1}:{root_message_id}"
+                )
             )
         buttons.append(
             types.InlineKeyboardButton(text=f"{page}/{self.total_pages}", callback_data="apg:noop")
         )
         if page < self.total_pages:
             buttons.append(
-                types.InlineKeyboardButton(text="Next ▶️", callback_data=f"apg:{self.hash16}:{page + 1}")
+                types.InlineKeyboardButton(
+                    text="Next ▶️", callback_data=f"apg:{self.hash16}:{page + 1}:{root_message_id}"
+                )
             )
         return types.InlineKeyboardMarkup(inline_keyboard=[buttons])
 
