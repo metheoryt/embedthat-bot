@@ -137,6 +137,11 @@ async def get_audio(callback: types.CallbackQuery):
         process_youtube_audio.send(callback.message.chat.id, video_id, callback.message.message_id)
 
 
+@router.callback_query(F.data == "apg:noop")
+async def noop_page_indicator(callback: types.CallbackQuery):
+    await callback.answer()
+
+
 @router.callback_query(F.data.startswith("apg:"))
 async def get_audio_page(callback: types.CallbackQuery):
     await callback.answer()
