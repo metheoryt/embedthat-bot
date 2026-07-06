@@ -6,6 +6,7 @@ import threading
 import traceback
 
 from aiogram import Bot
+from aiogram.types import LinkPreviewOptions
 
 from bot.config import settings
 
@@ -71,7 +72,12 @@ class TelegramAlertHandler(logging.Handler):
     async def _send(self, text: str) -> None:
         bot = Bot(token=self._token)
         try:
-            await bot.send_message(self._chat_id, text, parse_mode="HTML")
+            await bot.send_message(
+                self._chat_id,
+                text,
+                parse_mode="HTML",
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
         finally:
             await bot.session.close()
 
