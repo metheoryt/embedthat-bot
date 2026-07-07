@@ -295,7 +295,7 @@ redis = [
 ]
 
 [[package]]
-name = "embedthat-bot"
+name = "embedthat"
 version = "0.4.5"
 source = { virtual = "." }
 dependencies = [

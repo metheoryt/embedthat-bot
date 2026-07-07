@@ -33,7 +33,7 @@ jobs:
           context: .
           push: true
           tags: |
-            metheoryt/embedthat-bot:latest
-            metheoryt/embedthat-bot:${{ steps.version.outputs.version }}
+            metheoryt/embedthat:latest
+            metheoryt/embedthat:${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

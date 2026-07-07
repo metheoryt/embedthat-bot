@@ -62,7 +62,7 @@ docker compose up -d
 **Build Docker image:**
 
 ```bash
-docker build -t metheoryt/embedthat-bot:latest .
+docker build -t metheoryt/embedthat:latest .
 ```
 
 ## How It Works
