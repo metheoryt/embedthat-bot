@@ -12,6 +12,7 @@ from .enum import LinkOrigin
 from .events import on_link_received, on_yt_video_sent, on_social_video_sent
 from .util.stats import build_stats_report
 from .util.redis import redis_client
+from .util.chat import is_group_chat
 from .util.audio.pager import redeliver_page
 from .util.audio.schema import AudioRequestData
 from .util.social.schema import SocialVideoData
@@ -108,7 +109,8 @@ async def get_audio(callback: types.CallbackQuery):
 
     video_raw = await redis_client.get(cache_key)
     if not video_raw:
-        await callback.message.reply("❌ This video is no longer cached, please resend the link.")
+        if not is_group_chat(callback.message.chat.id):
+            await callback.message.reply("❌ This video is no longer cached, please resend the link.")
         return
 
     # remove the button right away so a repeat tap can't queue/duplicate a delivery
@@ -162,7 +164,8 @@ async def get_audio_page(callback: types.CallbackQuery):
 
     audio_raw = await redis_client.get(cache_key)
     if not audio_raw:
-        await callback.message.reply("❌ This playlist is no longer cached, please resend the link.")
+        if not is_group_chat(callback.message.chat.id):
+            await callback.message.reply("❌ This playlist is no longer cached, please resend the link.")
         return
 
     audio = AudioRequestData.model_validate_json(audio_raw)

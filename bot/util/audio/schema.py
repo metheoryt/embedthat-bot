@@ -6,6 +6,8 @@ from typing import cast
 from aiogram import types, Bot
 from pydantic import BaseModel, Field
 
+from bot.util.chat import is_group_chat
+
 PAGE_SIZE = 10  # Telegram's InputMediaAudio media-group cap
 
 
@@ -84,6 +86,9 @@ class AudioRequestData(BaseModel):
         page_tracks = self.page(page)
         deliverable = [t for t in page_tracks if t.file_id]
         if not deliverable:
+            if is_group_chat(chat_id):
+                # stay quiet in groups/supergroups/channels — no failure chatter
+                return []
             message = await bot.send_message(
                 chat_id, "❌ No tracks on this page could be downloaded.", reply_to_message_id=reply_to_message_id
             )

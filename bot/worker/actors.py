@@ -16,6 +16,7 @@ from bot.util.audio.exc import AudioDownloadError
 from bot.util.audio.schema import AudioRequestData, AudioTrackData
 from bot.util.audio.download import probe_link
 from bot.util.audio.pager import redeliver_page
+from bot.util.chat import is_group_chat
 from bot.util.redis_lock import HeartbeatLock
 from bot.util.social.exc import SocialDownloadError
 from bot.util.social.schema import SocialVideoData
@@ -70,6 +71,9 @@ async def _notify_waiters_success(bot: Bot, waiters: list[Waiter], video) -> Non
 
 async def _notify_waiters_failure(bot: Bot, waiters: list[Waiter], text: str) -> None:
     for waiter in waiters:
+        if is_group_chat(waiter.chat_id):
+            # stay quiet in groups/supergroups/channels — no failure chatter
+            continue
         if waiter.ack_message_id is not None:
             await _safe_edit_ack(bot, waiter.chat_id, waiter.ack_message_id, text)
         else:
