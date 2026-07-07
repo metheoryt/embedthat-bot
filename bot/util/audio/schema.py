@@ -1,5 +1,4 @@
 import hashlib
-import html
 import math
 from typing import cast
 
@@ -79,7 +78,6 @@ class AudioRequestData(BaseModel):
             parts.append(f"⚠️ {skipped} unavailable")
         if self.total_pages > 1:
             parts.append(f"Page {page}/{self.total_pages}")
-        parts.append(f'🔗 <a href="{html.escape(self.link)}">Source</a>')
         return "\n".join(parts)
 
     async def send_to_chat(self, bot: Bot, chat_id: int, reply_to_message_id: int, page: int = 1) -> list[int]:
@@ -110,6 +108,9 @@ class AudioRequestData(BaseModel):
             messages = await bot.send_media_group(chat_id, media, reply_to_message_id=reply_to_message_id)
             message_ids = [m.message_id for m in messages]
 
-        footer_message = await bot.send_message(chat_id, footer, parse_mode="HTML", reply_markup=markup)
-        message_ids.append(footer_message.message_id)
+        # only post a footer when it carries page info / nav — no bare source link,
+        # the delivery is already a reply to the user's original message
+        if footer or markup:
+            footer_message = await bot.send_message(chat_id, footer, reply_markup=markup)
+            message_ids.append(footer_message.message_id)
         return message_ids
