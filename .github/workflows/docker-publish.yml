@@ -1,9 +1,11 @@
 name: Docker Publish
 
+# Retired as the delivery path: embedthat now deploys via the homeserver
+# local poll-and-build pipeline (vps/homeserver/deploy-embedthat.ps1 builds
+# embedthat:local from a git submodule). This workflow no longer runs on push;
+# it stays available for manual one-off publishes only (workflow_dispatch).
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build-and-push:
