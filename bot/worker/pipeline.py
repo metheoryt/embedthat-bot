@@ -77,6 +77,8 @@ async def handle_youtube_video(bot: Bot, video: YouTubeVideoData) -> YouTubeVide
         width, height = get_resolution(stream)
         video.width = width
         video.height = height
+        # free here (yt just fetched); spares every later redelivery a live lookup
+        video.capture_metadata()
 
         log.info('sending %d part(s) to dump chat to obtain file ids', len(file_paths))
         video.file_ids = await _upload_parts_to_dump_chat(bot, file_paths, width, height)

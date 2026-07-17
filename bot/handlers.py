@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 
@@ -96,6 +97,9 @@ async def embed_youtube_videos(message: types.Message):
     if video_raw := await redis_client.get(video.cache_key):
         cached = YouTubeVideoData.model_validate_json(video_raw)
         log.info("cache hit for %s", video.cache_key)
+        if await asyncio.to_thread(cached.ensure_metadata):
+            # promote a pre-metadata entry so the next hit skips YouTube entirely
+            await redis_client.set(video.cache_key, cached.model_dump_json())
         try:
             await cached.reply_to(message)
         except TelegramBadRequest:
@@ -139,11 +143,14 @@ async def get_audio(callback: types.CallbackQuery):
 
     video = YouTubeVideoData.model_validate_json(video_raw)
     if video.audio_file_id:
+        if await asyncio.to_thread(video.ensure_metadata):
+            # promote a pre-metadata entry so the next tap skips YouTube entirely
+            await redis_client.set(cache_key, video.model_dump_json())
         await callback.message.answer_audio(
             video.audio_file_id,
-            performer=video.yt.author,
-            title=video.yt.title,
-            duration=video.yt.length,
+            performer=video.author,
+            title=video.title,
+            duration=video.length,
         )
         return
 

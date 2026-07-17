@@ -93,9 +93,9 @@ async def _notify_audio_waiters_success(bot: Bot, waiters: list[Waiter], video: 
         await bot.send_audio(
             waiter.chat_id,
             video.audio_file_id,
-            performer=video.yt.author,
-            title=video.yt.title,
-            duration=video.yt.length,
+            performer=video.author,
+            title=video.title,
+            duration=video.length,
         )
 
 
@@ -198,14 +198,16 @@ async def _process_youtube_audio_async(bot: Bot, chat_id: int, video_id: str, re
                         await _notify_waiters_failure(bot, waiters, f"❌ Couldn't extract audio: {e}")
                         raise
 
+                    video.capture_metadata()
+
                     for i in range(3):
                         try:
                             media_message = await bot.send_audio(
                                 settings.dump_chat_id,
                                 types.FSInputFile(audio_path),
-                                performer=video.yt.author,
-                                title=video.yt.title,
-                                duration=video.yt.length,
+                                performer=video.author,
+                                title=video.title,
+                                duration=video.length,
                             )
                             break
                         except TelegramNetworkError:
@@ -217,6 +219,10 @@ async def _process_youtube_audio_async(bot: Bot, chat_id: int, video_id: str, re
                 video.audio_file_id = media_message.audio.file_id
                 await redis_client.set(cache_key, video.model_dump_json())
                 log.info("cached audio for %s", cache_key)
+
+            if await asyncio.to_thread(video.ensure_metadata):
+                # promote a pre-metadata entry so the next tap skips YouTube entirely
+                await redis_client.set(cache_key, video.model_dump_json())
 
             waiters = await _pop_waiters(redis_client, audio_waiters_key)
             await _notify_audio_waiters_success(bot, waiters, video)

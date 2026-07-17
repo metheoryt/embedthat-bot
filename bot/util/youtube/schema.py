@@ -1,3 +1,4 @@
+import logging
 from functools import cached_property
 
 from aiogram import Bot, types
@@ -5,6 +6,9 @@ from pydantic import BaseModel, Field
 from pytubefix import YouTube
 
 from .enum import SourceLang, TargetLang
+from .exc import translates_youtube_errors
+
+log = logging.getLogger(__name__)
 
 
 class YouTubeVideoData(BaseModel):
@@ -31,11 +35,57 @@ class YouTubeVideoData(BaseModel):
     # Telegram file_id of the audio-only extraction, populated on first "🎵 Get audio" request
     audio_file_id: str | None = None
 
+    # Snapshot of YouTube's own metadata, taken while the video was still downloadable.
+    # Reading yt.title/.author/.length is a ~1s live query against YouTube, so without
+    # this every redelivery from cache re-fetches what we already know -- and worse,
+    # raises once the video goes private/age-gated, breaking redelivery of file_ids we
+    # already hold. None on pre-metadata entries -- see ensure_metadata.
+    title: str | None = None
+    author: str | None = None
+    length: int | None = None
+
     @cached_property
     def yt(self):
         # https://github.com/JuanBindez/pytubefix/pull/209
         # return YouTube(self.link, "WEB")
         return YouTube(self.link)
+
+    @translates_youtube_errors
+    def capture_metadata(self) -> None:
+        """Snapshot title/author/length off `yt`.
+
+        Effectively free once `yt` has fetched its streams (pytubefix memoizes
+        vid_info), so call it on the processing path, where we know the video was
+        reachable a moment ago -- never on the redelivery path.
+
+        Reads all three before assigning any: on a cold `yt` these are live queries
+        that can fail individually (a restricted video may still answer for .title
+        but not .length), and a half-populated model would look complete to
+        ensure_metadata and never be retried.
+        """
+        title, author, length = self.yt.title, self.yt.author, self.yt.length
+        self.title, self.author, self.length = title, author, length
+
+    def ensure_metadata(self) -> bool:
+        """Best-effort backfill for entries cached before these fields existed.
+
+        Returns True if it actually fetched, so the caller can re-save the entry and
+        make this a one-off. Blocking -- call via asyncio.to_thread. Deliberately
+        never raises: the files are already in the dump chat, so a video that has
+        since been restricted should still redeliver, just captioned without its
+        title. New entries make this a no-op, which is what keeps redelivery off the
+        network entirely.
+        """
+        if self.title is not None:
+            return False
+        try:
+            self.capture_metadata()
+        except Exception as e:
+            # `link` and not `cache_key`: the latter builds a YouTube object and can
+            # raise, which would defeat the whole point of this handler
+            log.warning("could not backfill metadata for %s: %r", self.link, e)
+            return False
+        return True
 
     @property
     def cache_key(self):
@@ -43,9 +93,12 @@ class YouTubeVideoData(BaseModel):
 
     @property
     def caption(self):
+        # title is empty only for pre-metadata entries YouTube won't describe any
+        # more; drop the line entirely rather than lead the caption with a blank one
+        title = self.title or ''
         if self.translated_lang and self.translated_lang != TargetLang.ORIGINAL:
-            return f"{self.yt.title} [{self.translated_lang} audio]\n{self.link}\n"
-        return f"{self.yt.title}\n{self.link}\n"
+            title = f"{title} [{self.translated_lang} audio]".lstrip()
+        return f"{title}\n{self.link}\n" if title else f"{self.link}\n"
 
     @property
     def media_group(self):
