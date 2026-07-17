@@ -30,7 +30,7 @@ Copy `.env.dist` to `.env` and populate:
 - `BOT_TOKEN` — Telegram bot token (required)
 - `DUMP_CHAT_ID` — Telegram chat ID for temporary video storage (required); the bot sends videos here first to obtain Telegram `file_id`s for caching
 - `REDIS_URL` — Redis connection string (default: `redis://redis`)
-- `FEED_CHANNEL_ID`, `ADMIN_CHAT_ID` — optional
+- `ADMIN_CHAT_ID` — optional
 
 ## Architecture
 
@@ -41,7 +41,7 @@ Copy `.env.dist` to `.env` and populate:
 3. **Instagram/TikTok**: domain is rewritten to a proxy embedding service and sent back as a link
 4. **Twitter/X**: domain is replaced with fxtwitter.com / fixupx.com
 5. **YouTube**: full download-and-upload pipeline (see below)
-6. Signals in `bot/events/signals.py` trigger cross-cutting handlers (logging in `log.py`, optional feed channel sharing in `share.py`)
+6. Signals in `bot/events/signals.py` trigger cross-cutting handlers (logging in `log.py`, usage counters in `stats.py`)
 
 ### YouTube Pipeline (`bot/util/youtube/`)
 

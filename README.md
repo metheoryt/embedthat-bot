@@ -42,7 +42,6 @@ Live at: https://t.me/embedthat_bot
 | `REDIS_URL`       | No       | Redis connection string (default: `redis://redis`)                                  |
 | `LOGLEVEL`        | No       | Log level (default: `INFO`)                                                         |
 | `TZ`              | No       | Timezone for log timestamps (default: `Asia/Almaty`)                                |
-| `FEED_CHANNEL_ID` | No       | Channel to mirror processed links to                                                |
 | `ADMIN_CHAT_ID`   | No       | Admin chat for error notifications                                                  |
 
 ## Running

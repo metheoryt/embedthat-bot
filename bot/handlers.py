@@ -47,11 +47,24 @@ async def error_handler(event: ErrorEvent):
 
 @router.message(CommandStart())
 async def start(message: types.Message):
+    log.info(
+        "/start in %s %r (chat id=%s)",
+        message.chat.type,
+        message.chat.title or "private chat",
+        message.chat.id,
+    )
     await message.reply(
         "Send a link and I'll reply with a nice embedding or a video.\n\n"
         "📹 Video: YouTube, Instagram, TikTok, Twitter/X, Facebook, Reddit, and more\n"
         "🎵 Audio: SoundCloud, Bandcamp, Mixcloud, Audiomack, and more"
     )
+
+
+@router.channel_post(CommandStart())
+async def start_channel(message: types.Message) -> None:
+    # Channel posts never reach @router.message, so a channel has no other way to
+    # reveal its id. No reply: posting a welcome text into a channel is noise.
+    log.info("/start in channel %r (chat id=%s)", message.chat.title, message.chat.id)
 
 
 @router.message(Command("stats"))
