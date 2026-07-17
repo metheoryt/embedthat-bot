@@ -8,7 +8,7 @@ from aiogram import Bot, types
 from aiogram.exceptions import TelegramNetworkError
 
 from bot.config import settings
-from bot.events.signals import on_yt_video_fail, on_social_video_fail
+from bot.events.signals import on_social_video_fail, on_yt_video_fail
 from bot.util.audio.download import download_track
 from bot.util.audio.exc import AudioDownloadError
 from bot.util.audio.schema import AudioTrackData
@@ -17,7 +17,12 @@ from bot.util.social.exc import SocialDownloadError
 from bot.util.social.schema import SocialVideoData
 from bot.util.youtube.exc import YouTubeError
 from bot.util.youtube.schema import YouTubeVideoData
-from bot.util.youtube.video import get_resolution, check_download_adaptive, split_video, MAX_FILE_SIZE_BYTES
+from bot.util.youtube.video import (
+    MAX_FILE_SIZE_BYTES,
+    check_download_adaptive,
+    get_resolution,
+    split_video,
+)
 
 log = logging.getLogger(__name__)
 

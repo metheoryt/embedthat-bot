@@ -1,7 +1,7 @@
 from aiogram import Bot
 
 from bot.config import settings
-from bot.events.signals import signal_handler, on_yt_video_sent, on_social_video_sent
+from bot.events.signals import on_social_video_sent, on_yt_video_sent, signal_handler
 from bot.util.social.schema import SocialVideoData
 from bot.util.youtube.schema import YouTubeVideoData
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from pydantic import RedisDsn, Field, AliasChoices
+from pydantic import AliasChoices, Field, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 

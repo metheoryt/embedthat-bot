@@ -11,11 +11,11 @@ from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
 from redis.asyncio.lock import Lock
 
 from bot.config import settings
-from bot.events.signals import on_yt_video_sent, on_social_video_sent
-from bot.util.audio.exc import AudioDownloadError
-from bot.util.audio.schema import AudioRequestData, AudioTrackData
+from bot.events.signals import on_social_video_sent, on_yt_video_sent
 from bot.util.audio.download import probe_link
+from bot.util.audio.exc import AudioDownloadError
 from bot.util.audio.pager import redeliver_page
+from bot.util.audio.schema import AudioRequestData, AudioTrackData
 from bot.util.chat import is_group_chat
 from bot.util.redis_lock import HeartbeatLock
 from bot.util.social.exc import SocialDownloadError
@@ -24,10 +24,18 @@ from bot.util.youtube.enum import TargetLang
 from bot.util.youtube.exc import YouTubeError
 from bot.util.youtube.schema import YouTubeVideoData
 from bot.util.youtube.video import get_audio_stream
-from bot.worker.broker import broker  # noqa: F401 -- registers the Redis broker before actors are declared
+from bot.worker.broker import (
+    broker,  # noqa: F401 -- registers the Redis broker before actors are declared
+)
 from bot.worker.chat_action import with_chat_action
-from bot.worker.error_reporting import report_actor_failure  # noqa: F401 -- registers the actor with the broker
-from bot.worker.pipeline import handle_audio_page, handle_social_video, handle_youtube_video
+from bot.worker.error_reporting import (
+    report_actor_failure,  # noqa: F401 -- registers the actor with the broker
+)
+from bot.worker.pipeline import (
+    handle_audio_page,
+    handle_social_video,
+    handle_youtube_video,
+)
 from bot.worker.waiters import Waiter, pop_waiters
 
 log = logging.getLogger(__name__)

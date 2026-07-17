@@ -12,3 +12,6 @@ wheels/
 .env
 # IntelliJ Idea
 .idea
+
+# gortex-generated per-repo routing skills (re-sprayed by `gortex init`; keep out of git)
+.claude/skills/generated/

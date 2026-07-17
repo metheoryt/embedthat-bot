@@ -13,7 +13,6 @@ from .exc import YouTubeError
 from .schema import YouTubeVideoData
 from .translate import maybe_translate_audio
 
-
 MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
 
 

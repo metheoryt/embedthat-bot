@@ -1,11 +1,10 @@
 from functools import cached_property
 
-from aiogram import types, Bot
+from aiogram import Bot, types
 from pydantic import BaseModel, Field
 from pytubefix import YouTube
 
 from .enum import SourceLang, TargetLang
-from bot.config import settings
 
 
 class YouTubeVideoData(BaseModel):

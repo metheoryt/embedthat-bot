@@ -1,7 +1,7 @@
 import logging
 import re
 
-from aiogram import types, F
+from aiogram import F, types
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.types import ErrorEvent, Message
@@ -9,16 +9,21 @@ from aiogram.types import ErrorEvent, Message
 from .config import settings
 from .dispatcher import router
 from .enum import LinkOrigin
-from .events import on_link_received, on_yt_video_sent, on_social_video_sent
-from .util.stats import build_stats_report
-from .util.redis import redis_client
-from .util.chat import is_group_chat
+from .events import on_link_received, on_social_video_sent, on_yt_video_sent
 from .util.audio.pager import redeliver_page
 from .util.audio.schema import AudioRequestData
+from .util.chat import is_group_chat
+from .util.redis import redis_client
 from .util.social.schema import SocialVideoData
+from .util.stats import build_stats_report
 from .util.youtube.enum import TargetLang
 from .util.youtube.schema import YouTubeVideoData
-from .worker.actors import process_audio_page, process_social_link, process_youtube_audio, process_youtube_link
+from .worker.actors import (
+    process_audio_page,
+    process_social_link,
+    process_youtube_audio,
+    process_youtube_link,
+)
 from .worker.waiters import Waiter, register_waiter
 
 log = logging.getLogger(__name__)

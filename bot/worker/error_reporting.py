@@ -2,7 +2,9 @@ import logging
 
 import dramatiq
 
-from bot.worker.broker import broker  # noqa: F401 -- registers the Redis broker before the actor is declared
+from bot.worker.broker import (
+    broker,  # noqa: F401 -- registers the Redis broker before the actor is declared
+)
 
 log = logging.getLogger(__name__)
 

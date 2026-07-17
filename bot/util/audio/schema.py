@@ -2,7 +2,7 @@ import hashlib
 import math
 from typing import cast
 
-from aiogram import types, Bot
+from aiogram import Bot, types
 from pydantic import BaseModel, Field
 
 from bot.util.chat import is_group_chat

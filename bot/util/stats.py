@@ -1,8 +1,8 @@
 import asyncio
 from datetime import date, timedelta
 
-from bot.util.redis import redis_client
 from bot.config import settings
+from bot.util.redis import redis_client
 from bot.worker.broker import broker as dramatiq_broker
 
 

@@ -1,16 +1,16 @@
 import redis.asyncio as redis
 from redis.asyncio import Redis
 
+from bot.config import settings
 from bot.events.signals import (
     on_link_received,
-    on_yt_video_sent,
+    on_social_video_fail,
     on_social_video_sent,
     on_yt_video_fail,
-    on_social_video_fail,
+    on_yt_video_sent,
     signal_handler,
 )
 from bot.util.redis import redis_client
-from bot.config import settings
 
 _TTL = 90 * 24 * 3600  # 90 days
 

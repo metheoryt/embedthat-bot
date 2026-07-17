@@ -3,6 +3,7 @@ import logging
 from aiogram.types import Message
 
 from bot.enum import LinkOrigin
+
 from ..signals import on_link_received, signal_handler
 
 log = logging.getLogger(__name__)

@@ -1,9 +1,7 @@
 import hashlib
 
-from aiogram import types, Bot
+from aiogram import Bot, types
 from pydantic import BaseModel, Field
-
-from bot.config import settings
 
 
 class SocialVideoData(BaseModel):
