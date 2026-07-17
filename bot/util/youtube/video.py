@@ -9,7 +9,7 @@ from pytubefix import Stream
 from bot.config import settings
 
 from .enum import TargetLang
-from .exc import YouTubeError
+from .exc import YouTubeError, translates_youtube_errors
 from .schema import YouTubeVideoData
 from .translate import maybe_translate_audio
 
@@ -40,6 +40,7 @@ def get_resolution(stream: Stream) -> tuple[int, int]:
     return 720, 480
 
 
+@translates_youtube_errors
 def get_audio_stream(video: YouTubeVideoData, output_path: Path):
     audio_streams = video.yt.streams.filter(file_extension='mp4', only_audio=True).order_by('abr').desc()
     log.info('adaptive audio streams: %s', audio_streams)
@@ -199,6 +200,7 @@ def split_video(duration_seconds: int, input_path: Path, output_dir: Path, n_par
     return parts
 
 
+@translates_youtube_errors
 def check_download_adaptive(
     video: YouTubeVideoData,
     output_path: str,
