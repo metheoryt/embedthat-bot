@@ -24,9 +24,12 @@ def _deep_probe(url: str) -> dict:
     opts: Any = {"quiet": True, "skip_download": True, "noplaylist": True}
     with yt_dlp.YoutubeDL(opts) as ydl:
         try:
-            return cast(dict[str, Any], ydl.extract_info(url, download=False))
+            info = ydl.extract_info(url, download=False)
         except DownloadError as e:
             raise AudioDownloadError(str(e)) from e
+    if info is None:
+        raise AudioDownloadError(f"Could not extract media from {url}")
+    return cast(dict[str, Any], info)
 
 
 def probe_link(url: str) -> tuple[bool, list[AudioTrackData]]:
@@ -38,9 +41,13 @@ def probe_link(url: str) -> tuple[bool, list[AudioTrackData]]:
     opts: Any = {"quiet": True, "skip_download": True, "extract_flat": "in_playlist", "noplaylist": False}
     with yt_dlp.YoutubeDL(opts) as ydl:
         try:
-            info = cast(dict[str, Any], ydl.extract_info(url, download=False))
+            info = ydl.extract_info(url, download=False)
         except DownloadError as e:
             raise AudioDownloadError(str(e)) from e
+
+    if info is None:
+        raise AudioDownloadError(f"Could not extract media from {url}")
+    info = cast(dict[str, Any], info)
 
     if info.get("_type") == "playlist" or "entries" in info:
         entries = list(itertools.islice(info["entries"], settings.max_playlist_tracks))
@@ -100,9 +107,13 @@ def download_track(track: AudioTrackData, output_dir: Path) -> Path:
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
-            info = cast(dict[str, Any], ydl.extract_info(track.webpage_url, download=True))
+            info = ydl.extract_info(track.webpage_url, download=True)
         except DownloadError as e:
             raise AudioDownloadError(str(e)) from e
+
+    if info is None:
+        raise AudioDownloadError(f"Could not download {track.title or track.webpage_url}")
+    info = cast(dict[str, Any], info)
 
     track.title = track.title or info.get("title") or ""
     track.uploader = track.uploader or info.get("uploader") or ""
